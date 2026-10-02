@@ -60,6 +60,12 @@ and disabled-state preservation; and mocked access-chroot mount construction.
 The source scan found no original deployment identifiers or credential patterns,
 and local documentation links resolved. The isolated checks started no daemons.
 
+The README also covers agent-driven installation and scheduler registration,
+administration, optional SSH/Tailscale access, the Debian demo and Incus usage.
+Documented control syntax matches the source interfaces; shell examples and
+documentation links are checked without applying configuration to live services.
+Tailscale login examples explicitly retain the routing baseline.
+
 A real platform reboot/recreation and external schedule registration were not
 verified by the original integration tests. Rootfs/runtime survival depends on
 preserved storage and metadata. The shared-kernel trusted manager requires

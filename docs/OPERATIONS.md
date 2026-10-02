@@ -70,6 +70,8 @@ future changes. Audit routing before Tailscale preference changes. Its approved
 baseline is TUN tailscale0, SOCKS127.0.0.1:1055, native nftables, no exit node,
 accept-DNS off and accept-routes off. NeedsLogin means unauthenticated. Use
 `tailscale status` to verify authentication; no automatic login is performed.
+For explicit login, retain the baseline with
+`tailscale login --accept-dns=false --accept-routes=false --exit-node=`.
 Outer SSH listens on 0.0.0.0:22, allows operator public keys and disables passwords
 and root login. Its keys/config/state live in infrastructure-rootfs.
 

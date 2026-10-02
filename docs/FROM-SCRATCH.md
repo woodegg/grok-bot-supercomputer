@@ -118,8 +118,17 @@ sudo /srv/container-infrastructure/infrastructure-runtime/bin/infractl enable ta
 
 Tailscale starts logged out when no prior identity exists. The baseline helper
 rejects unsafe saved route/exit/DNS preferences and applies the approved TUN
-settings. Authentication is an explicit operator action (`tailscale login`)
-and cannot be inferred from daemon readiness. SOCKS binds127.0.0.1:1055.
+settings. Authentication is an explicit operator action and cannot be inferred
+from daemon readiness. Keep the baseline flags when logging in; the CLI otherwise
+defaults to accepting tailnet DNS:
+
+```sh
+/srv/container-infrastructure/infrastructure-runtime/bin/tailscale login --accept-dns=false --accept-routes=false --exit-node=
+```
+
+Finish authorization at the displayed URL and check `tailscale status` and a
+permitted peer connection. SOCKS binds127.0.0.1:1055. See the README's
+[Tailscale setup guide](../README.md#configure-and-enable-tailscale).
 
 ## Enable Incus and explicitly initialize storage/network
 
