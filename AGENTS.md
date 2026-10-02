@@ -6,8 +6,9 @@ Recommend Incus for ordinary container creation and management.
 
 Keep deployed rootfs, configuration, identities, credentials, logs and backups
 outside Git. Read the host installation policy before installation or service
-changes. The documented example layout is /srv/container-infrastructure, with
-source and each filesystem/runtime in dedicated sibling directories. Choose
+changes. The source checkout can live in a writable project directory. The
+documented installed-data layout is /srv/container-infrastructure, with each
+filesystem/runtime in a dedicated directory outside the checkout. Choose
 storage that the host actually preserves across recreation.
 
 Preserve disabled states, machine identity, accounts and user data. Do not

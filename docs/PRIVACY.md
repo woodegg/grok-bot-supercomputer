@@ -13,6 +13,8 @@ intentionally retained as public attribution.
 Default paths under /srv/container-infrastructure, the operator account and
 10.88.0.0/24 bridge are examples. Review and adapt them before installation;
 changing source defaults does not migrate an existing deployment.
+The source checkout can live in any writable project directory; installed
+rootfs/runtime paths require root/sudo and independently preserved storage.
 
 Keep real configuration, credentials, SSH host/private keys, authorized keys,
 Tailscale state, Incus certificates/databases, rootfs, backups and logs outside

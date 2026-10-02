@@ -71,7 +71,8 @@ no privileged default profile is installed.
 
 ## Persistence boundaries
 
-Source, rootfs and runtime are siblings, not one copied outer Debian system.
+Source is separate from installed rootfs/runtime trees and can live in a writable
+project directory. The installed trees each have dedicated directories.
 Each installed filesystem contains only its own native Debian base and role
 packages. All software, package databases, configuration and user data needed
 for restart are in the installation tree. Optional home command symlinks hold no second

@@ -28,8 +28,8 @@ Paste this task into **Codex, Claude Code, Antigravity or Grok Build**:
 ```text
 Set up https://github.com/woodegg/grok-bot-supercomputer on this Linux host.
 
-1. Clone the repository into /srv/container-infrastructure/source. If it is
-   already checked out, inspect the existing installation instead of replacing it.
+1. Clone the repository into a writable project directory, for example
+   ./grok-bot-supercomputer. Reuse an existing checkout rather than replacing it.
 2. Read AGENTS.md, the host's installation policy if present, and
    docs/FROM-SCRATCH.md, docs/CONFIGURATION.md and docs/OPERATIONS.md.
 3. Check the playbook prerequisites, available disk space, namespace/cgroup
@@ -56,13 +56,12 @@ Set up https://github.com/woodegg/grok-bot-supercomputer on this Linux host.
    observations actually made.
 ```
 
-If you prefer to clone first, run this on a fresh target and open the resulting
-folder in your coding agent:
+If you prefer to clone first, run this from a writable project directory and
+open the resulting folder in your coding agent:
 
 ```sh
-sudo install -d -m 755 -o "$(id -u)" -g "$(id -g)" /srv/container-infrastructure/source
-git clone https://github.com/woodegg/grok-bot-supercomputer.git /srv/container-infrastructure/source
-cd /srv/container-infrastructure/source
+git clone https://github.com/woodegg/grok-bot-supercomputer.git
+cd grok-bot-supercomputer
 ```
 
 For [Codex CLI](https://developers.openai.com/codex/cli/), run `codex` in that
@@ -71,6 +70,11 @@ to the same directory and target host. Ask each agent to read `AGENTS.md`
 explicitly. Agent installation and sign-in are separate prerequisites.
 While the repository is private, GitHub authentication is also required to clone
 it; an authenticated `gh repo clone` can be used instead of `git clone`.
+
+The source checkout can live in any writable project folder. The playbook's
+default installation directories under `/srv/container-infrastructure` need
+root/sudo and storage that survives the host's recreation policy. Cloning the
+source does not require creating those directories.
 
 The playbook is a sequence of reviewed scripts and commands, rather than a
 single unattended installer. For regular use, the resulting configuration should
@@ -119,9 +123,9 @@ and metadata before startup can recover them.
 
 ## Installation layout
 
-All paths below are example defaults under `/srv/container-infrastructure`.
+Installed data uses example defaults under `/srv/container-infrastructure`.
 Adapt them consistently before installing on a host with a different layout.
-The source checkout and installed filesystems/runtimes are separate siblings.
+Keep installed filesystems/runtimes outside the source checkout.
 
 | Persistent installation | Contents |
 | --- | --- |
@@ -131,7 +135,7 @@ The source checkout and installed filesystems/runtimes are separate siblings.
 | `incus-runtime` | Manager launch configuration, controls and lifecycle state |
 | `infrastructure-rootfs` | Native runit/OpenSSH/Tailscale tools and outer access identities |
 | `infrastructure-runtime` | Outer supervision, four services, commands and private logs |
-| `source` | Reusable source and documentation; no live installation or secrets |
+| Your project checkout | Reusable source and documentation; no live installation or secrets |
 
 Packages use native APT paths and package databases inside their selected
 filesystem. Configuration and private state remain root-owned outside Git.

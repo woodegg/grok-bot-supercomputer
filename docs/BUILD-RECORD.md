@@ -44,7 +44,7 @@ addresses, exact package versions and timestamps are intentionally omitted.
 
 ## Publication changes and limits
 
-Publication source uses /srv/container-infrastructure, the generic operator
+Publication installers use /srv/container-infrastructure, the generic operator
 account and an example bridge subnet. Network probes accept locally configured
 hosts instead of embedding a private management endpoint. Obsolete one-time
 home-prefix migration scripts were removed; optional migration from existing
@@ -65,6 +65,9 @@ administration, optional SSH/Tailscale access, the Debian demo and Incus usage.
 Documented control syntax matches the source interfaces; shell examples and
 documentation links are checked without applying configuration to live services.
 Tailscale login examples explicitly retain the routing baseline.
+Clone instructions use a writable project directory. The scripts discover their
+source directory independently of root-owned installed-data paths. An authenticated
+clone into a writable directory was checked without provisioning software.
 
 A real platform reboot/recreation and external schedule registration were not
 verified by the original integration tests. Rootfs/runtime survival depends on

@@ -20,8 +20,8 @@ are absent. Kernel modules cannot be loaded. This recipe does not replace
 platform PID1, change parent controllers, format disks or install ZFS/Btrfs.
 The default bridge subnet 10.88.0.0/24 must not overlap existing routes.
 
-Keep source at /srv/container-infrastructure/source. The three rootfs and three runtime
-paths described in README must be dedicated, persistent siblings. Provisioning
+Keep source in a writable project directory. The three rootfs and three runtime
+paths described in README must be dedicated persistent directories outside Git. Provisioning
 refuses unrelated nonempty destinations. Do not rerun bootstrap provisioning
 against a partially built nonempty tree without investigating its contents.
 Native APT internals remain in each filesystem, including /var/lib/dpkg.
@@ -30,12 +30,15 @@ Native APT internals remain in each filesystem, including /var/lib/dpkg.
 
 Read any host installation policy first. Record already installed outer
 provisioning packages before introducing transient tools. Clone this repository
-into /srv/container-infrastructure/source; no live data belongs in that checkout.
-Paths are fixed example defaults across the installers and helpers. If changing
-the base, update all source/template paths consistently before installation.
+into a writable project directory; no live data belongs in that checkout.
+Run the commands below from that checkout. The scripts locate source relative
+to their own files. Installed paths under /srv/container-infrastructure need
+root/sudo and preserved storage; these defaults are fixed across the installers
+and helpers. If changing that base, update source/template paths consistently
+before installation.
 
 ```sh
-cd /srv/container-infrastructure/source
+# Run from the repository checkout.
 sudo apt-get update
 sudo apt-get install --no-install-recommends debootstrap gpgv
 # Skip this first provision step if the existing guest is already provisioned.
