@@ -1,8 +1,15 @@
 # Persistent Debian and Incus infrastructure
 
-Boot two independently selectable systemd environments under a platform whose
-PID1 is Tini. Outer runit supervises Debian, Incus, SSHD and Tailscale. Each
-systemd guest manages its native units; Incus manages its own instances.
+This project provides an **agent playbook to create persistent Debian and Incus
+environments on Grok Bot Computer**. It stores the installed filesystems,
+packages, configuration, accounts and runtime data in `/workspace`. When that
+workspace and its complete installation data are retained, the environments can
+recover after reboots, refreshes and platform upgrades through scheduled
+bootstrap. Keeping only the source repository or an empty workspace is not enough.
+
+Two independently selectable systemd environments run under the platform's
+Tini PID1. Outer runit supervises Debian, Incus, SSHD and Tailscale. Each systemd
+guest manages its native units; Incus manages its own instances.
 
 The directly launched Debian environment is a **demo** showing how to run a
 container directly with systemd-nspawn. For regular use, **use Incus to create
@@ -26,17 +33,20 @@ cannot supply capabilities that its host does not permit.
 Paste this task into **Codex, Claude Code, Antigravity or Grok Build**:
 
 ```text
-Set up https://github.com/woodegg/grok-bot-supercomputer on this Linux host.
+Set up https://github.com/woodegg/grok-bot-supercomputer on my Grok Bot Computer.
 
-1. Clone the repository into a writable project directory, for example
-   ./grok-bot-supercomputer. Reuse an existing checkout rather than replacing it.
+1. Clone the repository into /workspace/grok-bot-supercomputer. Reuse an
+   existing checkout rather than replacing it.
 2. Read AGENTS.md, the host's installation policy if present, and
    docs/FROM-SCRATCH.md, docs/CONFIGURATION.md and docs/OPERATIONS.md.
 3. Check the playbook prerequisites, available disk space, namespace/cgroup
    permissions and bridge subnet conflicts before provisioning.
-4. Follow docs/FROM-SCRATCH.md in order, using its signed native package
-   sources, provisioning scripts, control installers and Incus initializer.
-   Keep rootfs, configuration, credentials and runtime state outside Git.
+4. Before a fresh installation, adapt the playbook, scripts and templates from
+   their generic /srv/container-infrastructure base to /workspace consistently.
+   Store all rootfs/runtime trees there, outside the source checkout. Then follow
+   docs/FROM-SCRATCH.md using its signed native packages, provisioning scripts,
+   control installers and Incus initializer. Preserve existing installation paths
+   and state when reusing a deployment. Keep credentials and runtime data out of Git.
 5. On a fresh installation, enable Incus and disable the direct Debian demo.
    Preserve saved service policy and identities on an existing installation.
    Leave SSHD/Tailscale disabled unless I supply the access setup separately.
@@ -44,11 +54,9 @@ Set up https://github.com/woodegg/grok-bot-supercomputer on this Linux host.
    on the fresh installation. Verify startup is idempotent and disabled states
    survive. The optional full integration suite enables all four services;
    do not run it without separate access/disruption authorization.
-7. Configure the outer host's supported scheduler to run this every five minutes:
-   /bin/sh /srv/container-infrastructure/infrastructure-runtime/startup.sh --trigger scheduled
-   Use the existing platform scheduler or an already-running host cron service.
-   If registration needs a user-only platform UI, give me the exact entry and
-   mark registration pending. Do not create a second supervisor or scheduler.
+7. Give me the scheduling prompt from the README to send to the Grok Bot chat
+   window, creating a task that runs bootstrap every five minutes. Scheduler
+   registration remains pending until that chat task has actually been created.
 8. Run a manual bootstrap check and verify the scheduled invocation in the
    private lifecycle events when available. Report service status, test results,
    schedule registration and remaining requirements. Keep private deployment
@@ -60,6 +68,7 @@ If you prefer to clone first, run this from a writable project directory and
 open the resulting folder in your coding agent:
 
 ```sh
+cd /workspace
 git clone https://github.com/woodegg/grok-bot-supercomputer.git
 cd grok-bot-supercomputer
 ```
@@ -71,61 +80,62 @@ explicitly. Agent installation and sign-in are separate prerequisites.
 While the repository is private, GitHub authentication is also required to clone
 it; an authenticated `gh repo clone` can be used instead of `git clone`.
 
-The source checkout can live in any writable project folder. The playbook's
-default installation directories under `/srv/container-infrastructure` need
-root/sudo and storage that survives the host's recreation policy. Cloning the
-source does not require creating those directories.
+Use a `/workspace` subfolder for the source checkout. Installed rootfs/runtime
+trees also belong in `/workspace`, separately from Git, and require root/sudo.
+The reusable scripts and full playbook currently have generic
+`/srv/container-infrastructure` defaults: the installation agent must adapt
+that base consistently to `/workspace` before a fresh Grok Bot installation.
+The commands in this README show the resulting workspace layout.
 
 The playbook is a sequence of reviewed scripts and commands, rather than a
 single unattended installer. For regular use, the resulting configuration should
 run Incus; enable the direct Debian guest when you want to explore the demo.
 
-### Configure scheduled startup
+### Schedule bootstrap through Grok Bot chat
 
-After following the [from-scratch playbook](docs/FROM-SCRATCH.md), register this
-command in the **outer host/platform scheduler**, with a five-minute interval:
+After installation, send this prompt in the **Grok Bot chat window** to create
+its recurring task. Use **every five minutes**, the smallest available interval:
 
-```sh
-/bin/sh /srv/container-infrastructure/infrastructure-runtime/startup.sh --trigger scheduled
+```text
+Create a scheduled task on my Grok Bot Computer that runs every 5 minutes.
+On each run, execute this command:
+
+/bin/sh /workspace/infrastructure-runtime/startup.sh --trigger scheduled
+
+Confirm that the recurring task has been created.
 ```
 
-Run it as root or as a trusted operator with working noninteractive sudo. For
-an external scheduler, enter the command and interval in its task configuration.
-If the host already runs cron, the equivalent entry in `sudo crontab -e` is:
-
-```cron
-*/5 * * * * /bin/sh /srv/container-infrastructure/infrastructure-runtime/startup.sh --trigger scheduled
-```
-
-Add that line to the existing crontab without replacing its other entries. Pick
-one scheduler for this job. This project does not install or start a cron daemon.
-
-Verify bootstrap manually, then inspect events again after a scheduled run:
+Use the installed startup path reported by your agent if your existing deployment
+has a different layout. The command needs root or a trusted operator with
+working noninteractive sudo. Confirm task creation in chat, then check the
+startup events after its first run:
 
 ```sh
-export PATH=/srv/container-infrastructure/infrastructure-runtime/bin:$PATH
-/bin/sh /srv/container-infrastructure/infrastructure-runtime/startup.sh --trigger host-startup
+export PATH=/workspace/infrastructure-runtime/bin:$PATH
 infractl status
 infractl events 20
 ```
 
-An invocation starts one missing supervisor and honors whole-supervisor and
-individual-service disables. Runit recovers exited services immediately; the
-recurring job recovers a missing scanner within its interval. Bootstrap starts
-existing installations and never provisions packages or initializes Incus again.
-Events record trigger labels, observations, decisions and results. A manual
-check does not prove scheduler registration or a real host reboot.
+A `scheduled` trigger in the events confirms that the bootstrap command was
+invoked. Review its outcome to see whether it started infrastructure, found it
+already running, or skipped deliberately disabled services. Task registration
+and a successful bootstrap run are separate checks.
 
-The Debian runtime's `startup.sh` forwards to the outer supervisor after
-installation. Use the infrastructure runtime command as the canonical entry.
-The host must preserve or restore all rootfs/runtime trees with their ownership
-and metadata before startup can recover them.
+Runit recovers exited services immediately. The five-minute chat task checks for
+a missing supervisor and starts it while honoring saved service policy.
+Bootstrap uses the installed workspace data; it does not reinstall software,
+reinitialize Incus or force disabled services on. The same check recovers the
+environments after a host restart or refresh when their workspace data remain.
+
+The canonical entry is `infrastructure-runtime/startup.sh`; the Debian runtime's
+startup script is a compatibility forwarder. Retain the complete rootfs/runtime
+trees, numeric owners and metadata in `/workspace` across platform changes.
 
 ## Installation layout
 
-Installed data uses example defaults under `/srv/container-infrastructure`.
-Adapt them consistently before installing on a host with a different layout.
-Keep installed filesystems/runtimes outside the source checkout.
+For Grok Bot Computer, installed data lives under `/workspace` after the agent
+adapts the generic playbook defaults. Keep installed filesystems/runtimes outside
+the `/workspace/grok-bot-supercomputer` source checkout.
 
 | Persistent installation | Contents |
 | --- | --- |
@@ -147,7 +157,7 @@ wrappers use noninteractive sudo when needed; the operator needs the appropriate
 sudo rights. Add the command directory to your shell's PATH:
 
 ```sh
-export PATH=/srv/container-infrastructure/infrastructure-runtime/bin:$PATH
+export PATH=/workspace/infrastructure-runtime/bin:$PATH
 infractl status
 sv status debian incus sshd tailscaled
 infractl events 20
@@ -193,7 +203,7 @@ Logs are private under `infrastructure-runtime/state/events.jsonl`,
 Read a daemon's log, for example, with:
 
 ```sh
-sudo tail -n 50 /srv/container-infrastructure/infrastructure-runtime/state/logs/sshd/current
+sudo tail -n 50 /workspace/infrastructure-runtime/state/logs/sshd/current
 ```
 
 ## Configure and enable SSHD
@@ -206,8 +216,8 @@ has its own home and sudo policy.
 On a fresh installation, install **your public key** at the configured location:
 
 ```sh
-sudo install -d -o root -g root -m 755 /srv/container-infrastructure/infrastructure-rootfs/etc/ssh/authorized_keys
-sudo install -o root -g root -m 644 /path/to/your-public-key.pub /srv/container-infrastructure/infrastructure-rootfs/etc/ssh/authorized_keys/operator
+sudo install -d -o root -g root -m 755 /workspace/infrastructure-rootfs/etc/ssh/authorized_keys
+sudo install -o root -g root -m 644 /path/to/your-public-key.pub /workspace/infrastructure-rootfs/etc/ssh/authorized_keys/operator
 ```
 
 Replace the public-key source path before running this. For an existing
@@ -219,11 +229,11 @@ configuration; account names must match the tools filesystem's accounts and
 its authorized-key filenames:
 
 ```sh
-sudoedit /srv/container-infrastructure/infrastructure-rootfs/etc/ssh/sshd_config.d/container-infrastructure.conf
+sudoedit /workspace/infrastructure-rootfs/etc/ssh/sshd_config.d/container-infrastructure.conf
 # Create any missing native host keys and validate the configuration:
-sudo chroot /srv/container-infrastructure/infrastructure-rootfs /usr/bin/ssh-keygen -A
-sudo install -d -o root -g root -m 755 /srv/container-infrastructure/infrastructure-rootfs/run/sshd
-sudo chroot /srv/container-infrastructure/infrastructure-rootfs /usr/sbin/sshd -t
+sudo chroot /workspace/infrastructure-rootfs /usr/bin/ssh-keygen -A
+sudo install -d -o root -g root -m 755 /workspace/infrastructure-rootfs/run/sshd
+sudo chroot /workspace/infrastructure-rootfs /usr/sbin/sshd -t
 infractl start
 infractl enable sshd
 # Once ready, verify through the service's mount namespace:
@@ -235,7 +245,7 @@ network policy. Inspect the host fingerprint locally and compare it during
 your first client connection:
 
 ```sh
-sudo chroot /srv/container-infrastructure/infrastructure-rootfs /usr/bin/ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+sudo chroot /workspace/infrastructure-rootfs /usr/bin/ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
 # Run from your client, using your private key and the host's reachable address:
 ssh -i /path/to/your-private-key -p 22 operator@HOST_ADDRESS
 ```
@@ -416,8 +426,8 @@ instances while preserving deliberately stopped ones. Use
 native package maintenance:
 
 ```sh
-sudo /srv/container-infrastructure/incus-runtime/bin/debianctl exec -- apt-get update
-sudo /srv/container-infrastructure/incus-runtime/bin/debianctl exec -- systemctl status incus
+sudo /workspace/incus-runtime/bin/debianctl exec -- apt-get update
+sudo /workspace/incus-runtime/bin/debianctl exec -- systemctl status incus
 ```
 
 The default pool uses `dir`: snapshots and clones copy files and consume time
@@ -433,9 +443,10 @@ Read [configuration](docs/CONFIGURATION.md), [operations](docs/OPERATIONS.md),
 the [direct-container notes](docs/SETUP-RECORD.md).
 
 The outer services and Incus manager are trusted administrators of the shared
-kernel/network. Platform recreation must preserve or restore the rootfs/runtime
-trees, numeric owners and metadata. Local service tests cannot prove the
-platform's preservation contract or external schedule registration.
+kernel/network. Reboots, refreshes and upgrades can be recovered when the full
+`/workspace` installation survives or is restored with its numeric owners and
+metadata. Local service tests cannot prove the platform's preservation contract;
+check the Grok Bot scheduled task and its actual bootstrap events separately.
 
 ## Contributors
 
