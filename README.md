@@ -1,11 +1,28 @@
 # Persistent Debian and Incus infrastructure
 
-This project provides an **agent playbook to create persistent Debian and Incus
-environments on Grok Bot Computer**. It stores the installed filesystems,
-packages, configuration, accounts and runtime data in `/workspace`. When that
-workspace and its complete installation data are retained, the environments can
-recover after reboots, refreshes and platform upgrades through scheduled
-bootstrap. Keeping only the source repository or an empty workspace is not enough.
+Grok Bot Computer's default Debian root filesystem is not reliable persistent
+storage. It has been lost or replaced during resets, upgrades and other events
+whose causes were unclear. Packages, services and customizations installed only
+in that root filesystem can disappear. The default system also uses Tini as
+PID1 rather than a full systemd service manager, which makes software that
+expects native systemd services difficult to install or run normally.
+
+This is why this project provides an **agent playbook to create persistent
+Debian and Incus environments on Grok Bot Computer**. It boots a complete Debian
+guest with systemd as its PID1, providing native package and service management.
+It also creates an Incus manager so you can create and manage your own
+unprivileged persistent containers, with independent operating systems,
+applications, accounts and snapshots.
+
+The installed filesystems, packages, configuration, accounts and runtime data
+live in `/workspace`. When that workspace and its complete installation data
+are retained, scheduled bootstrap can recover the environments after reboots,
+refreshes and platform upgrades. Keeping only the source repository or an empty
+workspace is not enough.
+
+These environments provide a base for persistent applications, including a full
+X11 desktop inside a container. Desktop packages and a display or remote-desktop
+service require additional setup; they are not preinstalled by this playbook.
 
 Two independently selectable systemd environments run under the platform's
 Tini PID1. Outer runit supervises Debian, Incus, SSHD and Tailscale. Each systemd
