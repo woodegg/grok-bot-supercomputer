@@ -6,6 +6,10 @@ from the original deployment history. Commit authors use the contributor's
 configured Git identity. Original deployment history and operator records are
 not part of the publication repository.
 
+The contributor details in CONTRIBUTORS.md and the README, the canonical
+repository URL, and the configured contributor's commit name/email are
+intentionally retained as public attribution.
+
 Default paths under /srv/container-infrastructure, the operator account and
 10.88.0.0/24 bridge are examples. Review and adapt them before installation;
 changing source defaults does not migrate an existing deployment.

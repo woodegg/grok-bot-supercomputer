@@ -77,7 +77,11 @@ only in the trusted manager namespace for its bridge administration. A helper
 adds two scoped legacy FORWARD exceptions when this bridge is configured;
 ExecStopPost removes those exact rules. The platform Docker policy remains.
 
-## Access identity
+## Optional access identity
+
+Skip this section for an Incus-only installation without outer access services.
+SSHD and Tailscale are initially disabled. Set up or migrate access only when
+the operator requests it and supplies the required public key/authentication.
 
 If migrating an existing Debian guest with native SSHD/Tailscale access, first
 review [optional migration](MIGRATION.md), match its account and paths, and
@@ -120,11 +124,14 @@ and cannot be inferred from daemon readiness. SOCKS binds127.0.0.1:1055.
 ## Enable Incus and explicitly initialize storage/network
 
 ```sh
+# Recommended fresh-install selection: Incus only.
+sudo /srv/container-infrastructure/infrastructure-runtime/bin/infractl disable debian
 sudo /srv/container-infrastructure/infrastructure-runtime/bin/infractl enable incus
+sudo /srv/container-infrastructure/infrastructure-runtime/bin/infractl start
 # Retry status until the guest/native API is ready:
 sudo /srv/container-infrastructure/infrastructure-runtime/bin/incus list
 sudo scripts/initialize-incus.py
-sudo /srv/container-infrastructure/infrastructure-runtime/bin/infractl enable debian
+# To explore the direct Debian demo, use infractl enable debian instead.
 ```
 
 The explicit initialization script creates dir pool local and the default root
@@ -181,18 +188,48 @@ services on. The old Debian startup path is a compatibility forwarder.
 
 ## Qualification and cleanup
 
-Integration tests briefly restart owned guests/access services and intentionally
-kill the owned scanner. Stop active work first. They create disposable accounts,
-services and instances, then remove those objects. They never reboot platform
-PID1. The current test creates clones from the documented qualification seed;
-prepare it explicitly before running on a fresh deployment:
+For the recommended Incus-only setup, first run unit tests and create disposable
+instances to check snapshots and clones. These checks do not enable the Debian
+demo or outer access services. Choose unused instance names; wait until the
+instance's `systemctl is-system-running` reports `running` before snapshotting.
+
+```sh
+export PATH=/srv/container-infrastructure/infrastructure-runtime/bin:$PATH
+python3 -m unittest discover -s tests -p 'test_*.py'
+CHECK_INSTANCE="setup-check-$(date +%s)-$$"
+incus launch images:debian/13 "$CHECK_INSTANCE"
+incus exec "$CHECK_INSTANCE" -- systemctl is-system-running
+incus exec "$CHECK_INSTANCE" -- sh -c 'echo original > /root/setup-check'
+incus snapshot create "$CHECK_INSTANCE" baseline
+incus exec "$CHECK_INSTANCE" -- sh -c 'echo modified > /root/setup-check'
+incus stop "$CHECK_INSTANCE"
+incus snapshot restore "$CHECK_INSTANCE" baseline
+incus start "$CHECK_INSTANCE"
+incus exec "$CHECK_INSTANCE" -- cat /root/setup-check
+incus copy "$CHECK_INSTANCE/baseline" "$CHECK_INSTANCE-copy"
+incus start "$CHECK_INSTANCE-copy"
+incus exec "$CHECK_INSTANCE-copy" -- cat /root/setup-check
+# Both cat commands should print original. Remove only these test instances.
+incus delete --force "$CHECK_INSTANCE-copy" "$CHECK_INSTANCE"
+infractl --trigger qualification startup
+infractl status
+```
+
+Check that repeated startup leaves one supervisor and keeps the demo/access
+services disabled. Register the external schedule separately as described above.
+
+The optional full integration suite temporarily enables **all four services**,
+including SSHD/Tailscale, briefly restarts guests/access and intentionally kills
+the owned scanner. Use it only when that access setup and disruption are
+authorized, on a fresh disposable installation or during maintenance. It restores
+the original per-service enable policy and removes its test objects; it never
+reboots platform PID1. Prepare its qualification seed explicitly:
 
 ```sh
 export PATH=/srv/container-infrastructure/infrastructure-runtime/bin:$PATH
 incus launch images:debian/13 infra-qualification
 incus exec infra-qualification -- useradd -m snapshot-user
 incus snapshot create infra-qualification baseline
-python3 -m unittest discover -s tests -p 'test_*.py'
 sudo python3 tests/infrastructure-integration.py
 incus delete --force infra-qualification
 infractl status

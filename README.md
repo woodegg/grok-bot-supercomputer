@@ -14,6 +14,62 @@ This repository provides reusable source with generic example paths and an
 `operator` account. It contains no deployed root filesystems, credentials or
 runtime state. See [publication and privacy](docs/PRIVACY.md).
 
+## Set up with Codex, Claude, Antigravity or Grok Build
+
+Use a coding-agent session with file and terminal access to the Linux host where
+you want the containers to run. The host needs the privileges and kernel
+features listed in the [from-scratch playbook](docs/FROM-SCRATCH.md); an agent
+cannot supply capabilities that its host does not permit.
+
+Paste this task into **Codex, Claude Code, Antigravity or Grok Build**:
+
+```text
+Set up https://github.com/woodegg/grok-bot-supercomputer on this Linux host.
+
+1. Clone the repository into /srv/container-infrastructure/source. If it is
+   already checked out, inspect the existing installation instead of replacing it.
+2. Read AGENTS.md, the host's installation policy if present, and
+   docs/FROM-SCRATCH.md, docs/CONFIGURATION.md and docs/OPERATIONS.md.
+3. Check the playbook prerequisites, available disk space, namespace/cgroup
+   permissions and bridge subnet conflicts before provisioning.
+4. Follow docs/FROM-SCRATCH.md in order, using its signed native package
+   sources, provisioning scripts, control installers and Incus initializer.
+   Keep rootfs, configuration, credentials and runtime state outside Git.
+5. On a fresh installation, enable Incus and disable the direct Debian demo.
+   Preserve saved service policy and identities on an existing installation.
+   Leave SSHD/Tailscale disabled unless I supply the access setup separately.
+6. Run unit tests and the playbook's Incus-only instance/snapshot/clone checks
+   on the fresh installation. Verify startup is idempotent and disabled states
+   survive. The optional full integration suite enables all four services;
+   do not run it without separate access/disruption authorization.
+7. Give me the exact startup command to register in the host schedule, the
+   service status, test results and remaining requirements. Keep the private
+   deployment record outside the checkout. Do not claim a host reboot or
+   scheduler registration was verified unless it actually was.
+```
+
+If you prefer to clone first, run this on a fresh target and open the resulting
+folder in your coding agent:
+
+```sh
+sudo install -d -m 755 -o "$(id -u)" -g "$(id -g)" /srv/container-infrastructure/source
+git clone https://github.com/woodegg/grok-bot-supercomputer.git /srv/container-infrastructure/source
+cd /srv/container-infrastructure/source
+```
+
+For [Codex CLI](https://developers.openai.com/codex/cli/), run `codex` in that
+directory and paste the task above. In the other agents, use a session connected
+to the same directory and target host. Ask each agent to read `AGENTS.md`
+explicitly. Agent installation and sign-in are separate prerequisites.
+While the repository is private, GitHub authentication is also required to clone
+it; an authenticated `gh repo clone` can be used instead of `git clone`.
+
+The playbook is a sequence of reviewed scripts and commands, rather than a
+single unattended installer. For regular use, the resulting configuration should
+run Incus; enable the direct Debian guest when you want to explore the demo.
+
+## Installation layout and controls
+
 | Persistent installation | Contents |
 | --- | --- |
 | `/srv/container-infrastructure/debian-rootfs` | Demo native Debian OS, packages, accounts, homes and journals |
@@ -66,3 +122,11 @@ unprivileged Incus instances receive separate namespaces and mapped UIDs.
 Platform recreation must preserve the rootfs/runtime trees with their metadata.
 Local service restart tests cannot prove the platform's preservation contract
 or external schedule registration.
+
+## Contributors
+
+**Jun Zhang** — project contributor. [GitHub: woodegg](https://github.com/woodegg)
+· [woodegg@hotmail.com](mailto:woodegg@hotmail.com).
+
+See [contributor information](CONTRIBUTORS.md). Contributions should preserve
+service policy and keep private deployment information out of source and history.
