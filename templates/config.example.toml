@@ -1,0 +1,9 @@
+rootfs = "/srv/container-infrastructure/debian-rootfs"
+machine = "debian-local"
+state_dir = "/srv/container-infrastructure/debian-runtime/state"
+# Default profile: root IDs match the host, capabilities stay in a user namespace.
+private_users = "identity"
+allow_tun = false
+# Shared-network Tailscale TUN needs the trusted infrastructure profile:
+# private_users = "no"
+# allow_tun = true
