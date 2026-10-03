@@ -122,3 +122,10 @@ explanations were consolidated and the outdated instruction to adapt defaults
 already set to `/workspace` was removed. Local file links and the syntax of
 all 17 shell examples passed checks, along with `git diff --check`. Examples
 were parsed without execution; no deployment or service state changed.
+
+## Initial release qualification
+
+For v0.1.0, all 16 unit tests passed, Python source parsed successfully, and
+shell scripts passed `bash -n`. Release preparation made no installation or
+service changes. Disruptive integration tests were not rerun against active
+work; earlier integration evidence and its limits remain as documented above.
