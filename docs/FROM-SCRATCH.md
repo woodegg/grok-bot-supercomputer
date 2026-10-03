@@ -4,7 +4,7 @@ For selecting both, either or neither environment and changing launch settings,
 see [environment configuration](CONFIGURATION.md). Enable/disable policy is
 saved through infractl rather than launch-config TOML switches.
 
-This guide installs the two-option infrastructure with generic defaults.
+This checkout installs the two-option infrastructure with `/workspace` defaults.
 The direct Debian guest is a demo; Incus is recommended for ordinary container
 creation and management. Source scripts contain the role/package/unit settings.
 Use dedicated persistent storage permitted by your host installation policy.
@@ -32,7 +32,7 @@ Read any host installation policy first. Record already installed outer
 provisioning packages before introducing transient tools. Clone this repository
 into a writable project directory; no live data belongs in that checkout.
 Run the commands below from that checkout. The scripts locate source relative
-to their own files. Installed paths under /srv/container-infrastructure need
+to their own files. Installed paths under /workspace need
 root/sudo and preserved storage; these defaults are fixed across the installers
 and helpers. If changing that base, update source/template paths consistently
 before installation.
@@ -42,10 +42,10 @@ before installation.
 sudo apt-get update
 sudo apt-get install --no-install-recommends debootstrap gpgv
 # Skip this first provision step if the existing guest is already provisioned.
-sudo scripts/provision.sh /srv/container-infrastructure/debian-rootfs
+sudo scripts/provision.sh /workspace/debian-rootfs
 sudo scripts/install-controls.sh
-sudo scripts/provision-infrastructure.sh host-tools /srv/container-infrastructure/infrastructure-rootfs
-sudo scripts/provision-infrastructure.sh incus /srv/container-infrastructure/incus-rootfs
+sudo scripts/provision-infrastructure.sh host-tools /workspace/infrastructure-rootfs
+sudo scripts/provision-infrastructure.sh incus /workspace/incus-rootfs
 sudo scripts/install-infrastructure.py
 ```
 
@@ -64,9 +64,9 @@ root:1000000:16777216. Do not append it over Debian's existing root range.
 The explicit trusted manager configuration is installed on its first deployment:
 
 ```toml
-rootfs = "/srv/container-infrastructure/incus-rootfs"
+rootfs = "/workspace/incus-rootfs"
 machine = "incus-manager"
-state_dir = "/srv/container-infrastructure/incus-runtime/state"
+state_dir = "/workspace/incus-runtime/state"
 private_users = "no"
 allow_tun = false
 allow_nesting = true
@@ -91,8 +91,8 @@ review [optional migration](MIGRATION.md), match its account and paths, and
 preserve its identity with:
 
 ```sh
-sudo /srv/container-infrastructure/debian-runtime/bin/debianctl start
-sudo /srv/container-infrastructure/infrastructure-runtime/bin/infractl start
+sudo /workspace/debian-runtime/bin/debianctl start
+sudo /workspace/infrastructure-runtime/bin/infractl start
 sudo scripts/migrate-access.py
 ```
 
@@ -112,11 +112,11 @@ content before enabling access. The installed SSH config listens on IPv4
 service owns port22 or SOCKS1055, resolve that ownership before enabling these.
 
 ```sh
-sudo install -d -m 755 /srv/container-infrastructure/infrastructure-rootfs/etc/ssh/authorized_keys
-sudo install -m 644 /path/to/your-public-key.pub /srv/container-infrastructure/infrastructure-rootfs/etc/ssh/authorized_keys/operator
-sudo /srv/container-infrastructure/infrastructure-runtime/bin/infractl start
-sudo /srv/container-infrastructure/infrastructure-runtime/bin/infractl enable sshd
-sudo /srv/container-infrastructure/infrastructure-runtime/bin/infractl enable tailscaled
+sudo install -d -m 755 /workspace/infrastructure-rootfs/etc/ssh/authorized_keys
+sudo install -m 644 /path/to/your-public-key.pub /workspace/infrastructure-rootfs/etc/ssh/authorized_keys/operator
+sudo /workspace/infrastructure-runtime/bin/infractl start
+sudo /workspace/infrastructure-runtime/bin/infractl enable sshd
+sudo /workspace/infrastructure-runtime/bin/infractl enable tailscaled
 ```
 
 Tailscale starts logged out when no prior identity exists. The baseline helper
@@ -126,7 +126,7 @@ from daemon readiness. Keep the baseline flags when logging in; the CLI otherwis
 defaults to accepting tailnet DNS:
 
 ```sh
-/srv/container-infrastructure/infrastructure-runtime/bin/tailscale login --accept-dns=false --accept-routes=false --exit-node=
+/workspace/infrastructure-runtime/bin/tailscale login --accept-dns=false --accept-routes=false --exit-node=
 ```
 
 Finish authorization at the displayed URL and check `tailscale status` and a
@@ -137,11 +137,11 @@ permitted peer connection. SOCKS binds127.0.0.1:1055. See the README's
 
 ```sh
 # Recommended fresh-install selection: Incus only.
-sudo /srv/container-infrastructure/infrastructure-runtime/bin/infractl disable debian
-sudo /srv/container-infrastructure/infrastructure-runtime/bin/infractl enable incus
-sudo /srv/container-infrastructure/infrastructure-runtime/bin/infractl start
+sudo /workspace/infrastructure-runtime/bin/infractl disable debian
+sudo /workspace/infrastructure-runtime/bin/infractl enable incus
+sudo /workspace/infrastructure-runtime/bin/infractl start
 # Retry status until the guest/native API is ready:
-sudo /srv/container-infrastructure/infrastructure-runtime/bin/incus list
+sudo /workspace/infrastructure-runtime/bin/incus list
 sudo scripts/initialize-incus.py
 # To explore the direct Debian demo, use infractl enable debian instead.
 ```
@@ -177,20 +177,22 @@ configuration changes to both the initializer and firewall helper.
 sudo scripts/install-controls.sh
 sudo scripts/install-infrastructure.py
 # Inspect changes before restarting affected services:
-sudo /srv/container-infrastructure/infrastructure-runtime/bin/infractl service-restart incus
+sudo /workspace/infrastructure-runtime/bin/infractl service-restart incus
 ```
 
 The old Debian startup alias and Tailscale command forward to the outer owner.
 Their dispatch checks the public executable, so the operator can use them
-despite root-private configuration. Optional ~/.local/bin symlinks for
-infractl, sv and incus point directly into infrastructure-runtime/bin; do not
-replace an unrelated existing command. SSH login and sudo PATH are configured
+despite root-private configuration. The infrastructure installer creates ~/.local/bin symlinks for infractl, sv,
+incus, debianctl and tailscale for the invoking user (SUDO_USER when using sudo).
+Existing commands are preserved. It adds ~/.local/bin to Bash interactive and
+login PATH configuration idempotently. In an already open terminal, run
+`export PATH="$HOME/.local/bin:$PATH"` or open a new terminal. SSH login and sudo PATH are configured
 inside the tools filesystem.
 
 Register exactly this in the platform's five-minute external schedule:
 
 ```sh
-/bin/sh /srv/container-infrastructure/infrastructure-runtime/startup.sh --trigger scheduled
+/bin/sh /workspace/infrastructure-runtime/startup.sh --trigger scheduled
 ```
 
 Both, either or neither environment can be enabled with infractl. Their
@@ -206,7 +208,7 @@ demo or outer access services. Choose unused instance names; wait until the
 instance's `systemctl is-system-running` reports `running` before snapshotting.
 
 ```sh
-export PATH=/srv/container-infrastructure/infrastructure-runtime/bin:$PATH
+export PATH=/workspace/infrastructure-runtime/bin:$PATH
 python3 -m unittest discover -s tests -p 'test_*.py'
 CHECK_INSTANCE="setup-check-$(date +%s)-$$"
 incus launch images:debian/13 "$CHECK_INSTANCE"
@@ -223,7 +225,7 @@ incus start "$CHECK_INSTANCE-copy"
 incus exec "$CHECK_INSTANCE-copy" -- cat /root/setup-check
 # Both cat commands should print original. Remove only these test instances.
 incus delete --force "$CHECK_INSTANCE-copy" "$CHECK_INSTANCE"
-infractl --trigger qualification startup
+infractl --trigger manual startup
 infractl status
 ```
 
@@ -238,7 +240,7 @@ the original per-service enable policy and removes its test objects; it never
 reboots platform PID1. Prepare its qualification seed explicitly:
 
 ```sh
-export PATH=/srv/container-infrastructure/infrastructure-runtime/bin:$PATH
+export PATH=/workspace/infrastructure-runtime/bin:$PATH
 incus launch images:debian/13 infra-qualification
 incus exec infra-qualification -- useradd -m snapshot-user
 incus snapshot create infra-qualification baseline

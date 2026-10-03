@@ -1,10 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 if [ "$(id -u)" != 0 ]; then
- exec sudo -n /usr/bin/env "RUNTIME_DIR=${RUNTIME_DIR:-/srv/container-infrastructure/debian-runtime}" /bin/bash "$0" "$@"
+ exec sudo -n /usr/bin/env "RUNTIME_DIR=${RUNTIME_DIR:-/workspace/debian-runtime}" /bin/bash "$0" "$@"
 fi
 PROJECT=$(cd -- "$(dirname -- "$0")/.." && pwd)
-RUNTIME_DIR=${RUNTIME_DIR:-/srv/container-infrastructure/debian-runtime}
+RUNTIME_DIR=${RUNTIME_DIR:-/workspace/debian-runtime}
 python3 - "$PROJECT" "$RUNTIME_DIR" <<'PY'
 import json
 import os
@@ -22,7 +22,7 @@ runtime = runtime.resolve()
 if runtime == project or runtime.is_relative_to(project):
  raise SystemExit('Runtime must be outside the source repository')
 for folder, mode in [(runtime,0o755),(runtime/'bin',0o755),
-                     (runtime/'libexec',0o755),(runtime/'etc',0o700)]:
+                     (runtime/'libexec',0o755),(runtime/'etc',0o700),(runtime/'state',0o700)]:
  folder.mkdir(parents=True,exist_ok=True)
  folder.chmod(mode);os.chown(folder,0,0)
 controller=runtime/'libexec/containerctl.py'
@@ -44,8 +44,8 @@ config.chmod(0o600);os.chown(config,0,0)
 quote=lambda path:shlex.quote(str(path))
 scripts={
  runtime/'bin/debianctl':'exec /usr/bin/python3 '+quote(controller)+' --config '+quote(config)+' "$@"',
- runtime/'bin/tailscale':('if [ -x /srv/container-infrastructure/infrastructure-runtime/bin/infractl ]; then exec /srv/container-infrastructure/infrastructure-runtime/bin/tailscale "$@"; fi\n' if runtime==Path('/srv/container-infrastructure/debian-runtime') else '')+'exec '+quote(runtime/'bin/debianctl')+' exec -- /usr/bin/tailscale "$@"',
- runtime/'startup.sh':('if [ -x /srv/container-infrastructure/infrastructure-runtime/bin/infractl ]; then exec /srv/container-infrastructure/infrastructure-runtime/startup.sh "$@"; fi\n' if runtime==Path('/srv/container-infrastructure/debian-runtime') else '')+'exec '+quote(runtime/'bin/debianctl')+' --trigger bootstrap "$@" startup',
+ runtime/'bin/tailscale':('if [ -x /workspace/infrastructure-runtime/bin/infractl ]; then exec /workspace/infrastructure-runtime/bin/tailscale "$@"; fi\n' if runtime==Path('/workspace/debian-runtime') else '')+'exec '+quote(runtime/'bin/debianctl')+' exec -- /usr/bin/tailscale "$@"',
+ runtime/'startup.sh':('if [ -x /workspace/infrastructure-runtime/bin/infractl ]; then exec /workspace/infrastructure-runtime/startup.sh "$@"; fi\n' if runtime==Path('/workspace/debian-runtime') else '')+'exec '+quote(runtime/'bin/debianctl')+' --trigger bootstrap "$@" startup',
 }
 for path,command in scripts.items():
  path.write_text('#!/bin/sh\n'+command+'\n');path.chmod(0o755);os.chown(path,0,0)

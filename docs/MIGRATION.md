@@ -13,8 +13,8 @@ filenames and account identity being migrated. Do not run it on unrelated data.
 After provisioning the native host-tools role and installing controls:
 
 ```sh
-sudo /srv/container-infrastructure/debian-runtime/bin/debianctl start
-sudo /srv/container-infrastructure/infrastructure-runtime/bin/infractl start
+sudo /workspace/debian-runtime/bin/debianctl start
+sudo /workspace/infrastructure-runtime/bin/infractl start
 sudo scripts/migrate-access.py
 ```
 

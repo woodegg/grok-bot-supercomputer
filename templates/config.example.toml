@@ -1,6 +1,6 @@
-rootfs = "/srv/container-infrastructure/debian-rootfs"
+rootfs = "/workspace/debian-rootfs"
 machine = "debian-local"
-state_dir = "/srv/container-infrastructure/debian-runtime/state"
+state_dir = "/workspace/debian-runtime/state"
 # Default profile: root IDs match the host, capabilities stay in a user namespace.
 private_users = "identity"
 allow_tun = false

@@ -59,7 +59,7 @@ Set up https://github.com/woodegg/grok-bot-supercomputer on my Grok Bot Computer
 3. Check the playbook prerequisites, available disk space, namespace/cgroup
    permissions and bridge subnet conflicts before provisioning.
 4. Before a fresh installation, adapt the playbook, scripts and templates from
-   their generic /srv/container-infrastructure base to /workspace consistently.
+   their generic base to /workspace consistently.
    Store all rootfs/runtime trees there, outside the source checkout. Then follow
    docs/FROM-SCRATCH.md using its signed native packages, provisioning scripts,
    control installers and Incus initializer. Preserve existing installation paths
@@ -99,9 +99,8 @@ it; an authenticated `gh repo clone` can be used instead of `git clone`.
 
 Use a `/workspace` subfolder for the source checkout. Installed rootfs/runtime
 trees also belong in `/workspace`, separately from Git, and require root/sudo.
-The reusable scripts and full playbook currently have generic
-`/srv/container-infrastructure` defaults: the installation agent must adapt
-that base consistently to `/workspace` before a fresh Grok Bot installation.
+This checkout has been adapted to use `/workspace` consistently in the
+scripts, templates and playbook.
 The commands in this README show the resulting workspace layout.
 
 The playbook is a sequence of reviewed scripts and commands, rather than a
@@ -151,7 +150,7 @@ trees, numeric owners and metadata in `/workspace` across platform changes.
 ## Installation layout
 
 For Grok Bot Computer, installed data lives under `/workspace` after the agent
-adapts the generic playbook defaults. Keep installed filesystems/runtimes outside
+uses the adapted playbook defaults. Keep installed filesystems/runtimes outside
 the `/workspace/grok-bot-supercomputer` source checkout.
 
 | Persistent installation | Contents |
@@ -169,9 +168,12 @@ filesystem. Configuration and private state remain root-owned outside Git.
 
 ## Administration commands
 
-Use these controls from the outer host or its configured SSH session. Command
-wrappers use noninteractive sudo when needed; the operator needs the appropriate
-sudo rights. Add the command directory to your shell's PATH:
+Use these controls from the outer host or its configured SSH session. The
+installer creates command symlinks in the installing user's `~/.local/bin` and
+configures Bash PATH, preserving existing commands. For an already open terminal,
+run `export PATH="$HOME/.local/bin:$PATH"`. The SSH operator's login PATH is
+configured inside the tools filesystem. Command wrappers use noninteractive
+sudo when needed. You can also use the installed command directory directly:
 
 ```sh
 export PATH=/workspace/infrastructure-runtime/bin:$PATH
@@ -223,12 +225,68 @@ Read a daemon's log, for example, with:
 sudo tail -n 50 /workspace/infrastructure-runtime/state/logs/sshd/current
 ```
 
+### Use the operator admin account
+
+`operator` is the admin account in the Debian tools filesystem,
+`infrastructure-rootfs`. Its account records and home are separate from the
+outer host's account, the direct Debian demo and accounts inside Incus instances.
+Inside an operator shell, `/home/operator` corresponds to
+`/workspace/infrastructure-rootfs/home/operator` on the outer host. This tools
+filesystem supplies SSHD and Tailscale without booting another full systemd guest.
+
+From the outer host terminal, enter its login shell while SSHD is running:
+
+```sh
+infractl host-exec sshd -- /usr/sbin/runuser --login operator
+```
+
+This command needs outer root or working noninteractive sudo. It does not enable
+SSHD; see the access setup below before enabling that service. Type `exit` to
+return to the outer shell. `debianctl shell` enters the separate Debian demo.
+
+For a remote login after installing your public key and enabling SSHD:
+
+```sh
+ssh -i /path/to/your-private-key operator@HOST_ADDRESS
+# With Tailscale authenticated and peer access permitted:
+ssh -i /path/to/your-private-key operator@TAILSCALE_IP
+```
+
+Use `operator` as the SSH username. The default SSHD listens on all IPv4
+interfaces at port 22, including the Tailscale IPv4 address when available.
+Password and root SSH login are disabled.
+
+The provisioned operator has passwordless sudo. Inside its shell:
+
+```sh
+sudo -n whoami
+# Prints root in the tools environment.
+infractl status
+incus list
+incus launch images:debian/13 my-container
+```
+
+The installed wrappers let operator administer the outer infrastructure and
+Incus manager through sudo. Ordinary shell paths and native package commands
+belong to the tools filesystem; `incus exec NAME -- COMMAND` runs inside the
+named instance.
+
+The account, home, public keys and SSH host identity remain in
+`infrastructure-rootfs`. Recovery after outer host recreation requires preserving
+the complete rootfs/runtime trees with numeric owners and metadata, restoring
+the host prerequisites, and invoking bootstrap. Source checkout preservation
+alone does not preserve the account or Incus data.
+
 ## Configure and enable SSHD
 
 The native host-tools role includes OpenSSH. Its default configuration listens
 on IPv4 `0.0.0.0:22`, accepts public keys for the `operator` account and disables
 password and root login. That account belongs to `infrastructure-rootfs` and
 has its own home and sudo policy.
+
+Authorized keys use one file per login user: the file named `operator` below
+contains all of that user's allowed public keys, one key per line. Keep each
+private key on its client computer.
 
 On a fresh installation, install **your public key** at the configured location:
 

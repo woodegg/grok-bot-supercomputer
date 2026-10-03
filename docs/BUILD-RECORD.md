@@ -44,7 +44,7 @@ addresses, exact package versions and timestamps are intentionally omitted.
 
 ## Publication changes and limits
 
-Publication installers use /srv/container-infrastructure, the generic operator
+Publication installers use /workspace, the generic operator
 account and an example bridge subnet. Network probes accept locally configured
 hosts instead of embedding a private management endpoint. Obsolete one-time
 home-prefix migration scripts were removed; optional migration from existing
@@ -77,3 +77,10 @@ must be evaluated separately on each target host.
 
 For reproducible setup and tests see FROM-SCRATCH.md; tests there affect owned
 services and should run on a disposable installation or during maintenance.
+
+A confidentiality review of the current uncommitted tracked changes and the
+untracked command-setup helper found no credentials, key material, private
+operator records or deployment-specific endpoints. Review combined source
+inspection with credential-pattern checks. Generic paths, account names and
+access instructions were retained. This review did not cover Git history,
+ignored files or deployed state, and ran no installers or service tests.

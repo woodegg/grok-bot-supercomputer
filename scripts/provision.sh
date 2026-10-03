@@ -3,11 +3,11 @@ set -euo pipefail
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export DEBIAN_FRONTEND=noninteractive
 if [ "$(id -u)" != 0 ]; then exec sudo -n /bin/bash "$0" "$@"; fi
-ROOTFS=${1:-/srv/container-infrastructure/debian-rootfs}
+ROOTFS=${1:-/workspace/debian-rootfs}
 case "$ROOTFS" in /*) ;; *) echo "Rootfs must be an absolute path" >&2; exit 2;; esac
 PROJECT=$(cd -- "$(dirname -- "$0")/.." && pwd)
 case "$ROOTFS" in "$PROJECT"|"$PROJECT"/*) echo "Keep rootfs outside the source project" >&2; exit 2;; esac
-case "$ROOTFS" in /|/usr|/etc|/home|/srv/container-infrastructure) echo 'Choose a dedicated rootfs directory' >&2; exit 2;; esac
+case "$ROOTFS" in /|/usr|/etc|/home|/workspace) echo 'Choose a dedicated rootfs directory' >&2; exit 2;; esac
 [ ! -L "$ROOTFS" ] || { echo 'Rootfs must not be a symlink' >&2; exit 2; }
 if [ -f "$ROOTFS/etc/debian-container-provisioned" ]; then echo "Already provisioned: $ROOTFS"; exit 0; fi
 if [ -e "$ROOTFS" ] && [ -n "$(ls -A "$ROOTFS")" ]; then echo 'Rootfs is nonempty and not provisioned; inspect it before retrying' >&2; exit 2; fi
@@ -28,7 +28,7 @@ cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 chroot "$ROOTFS" /usr/bin/apt-get update
 chroot "$ROOTFS" /usr/bin/apt-get -y --no-install-recommends upgrade
 # Account is local to the guest. Do not import host password hashes or keys.
-chroot "$ROOTFS" /usr/sbin/useradd --create-home --uid 1000 --shell /bin/bash --groups sudo operator
+chroot "$ROOTFS" /usr/sbin/useradd --create-home --uid 1000 --gid users --no-user-group --shell /bin/bash --groups sudo operator
 printf 'operator ALL=(ALL:ALL) NOPASSWD: ALL\n' > "$ROOTFS/etc/sudoers.d/operator"
 chmod 440 "$ROOTFS/etc/sudoers.d/operator"
 printf 'debian-local\n' > "$ROOTFS/etc/hostname"

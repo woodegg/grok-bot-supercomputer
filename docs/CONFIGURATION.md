@@ -5,7 +5,7 @@ It uses noninteractive sudo when needed. The two environments can be enabled
 independently; outer SSHD and Tailscale have separate settings.
 
 ```sh
-export PATH="/srv/container-infrastructure/infrastructure-runtime/bin:$PATH"
+export PATH="/workspace/infrastructure-runtime/bin:$PATH"
 infractl status
 ```
 
@@ -73,13 +73,13 @@ current process state without saving the same enable/disable policy.
 
 | Setting | Persistent location |
 | --- | --- |
-| Whole supervisor disabled | `/srv/container-infrastructure/infrastructure-runtime/state/disabled` |
-| Service disabled | `/srv/container-infrastructure/infrastructure-runtime/services/NAME/down` |
-| Debian guest disabled | `/srv/container-infrastructure/debian-runtime/state/disabled` |
-| Incus manager disabled | `/srv/container-infrastructure/incus-runtime/state/disabled` |
-| Supervisor filesystem/environment mapping | `/srv/container-infrastructure/infrastructure-runtime/etc/config.toml` |
-| Debian nspawn configuration | `/srv/container-infrastructure/debian-runtime/etc/config.toml` |
-| Incus manager nspawn configuration | `/srv/container-infrastructure/incus-runtime/etc/config.toml` |
+| Whole supervisor disabled | `/workspace/infrastructure-runtime/state/disabled` |
+| Service disabled | `/workspace/infrastructure-runtime/services/NAME/down` |
+| Debian guest disabled | `/workspace/debian-runtime/state/disabled` |
+| Incus manager disabled | `/workspace/incus-runtime/state/disabled` |
+| Supervisor filesystem/environment mapping | `/workspace/infrastructure-runtime/etc/config.toml` |
+| Debian nspawn configuration | `/workspace/debian-runtime/etc/config.toml` |
+| Incus manager nspawn configuration | `/workspace/incus-runtime/etc/config.toml` |
 
 `infractl enable/disable` synchronizes the service down marker and guest disabled
 marker. Use these commands instead of manually editing markers. TOML files
@@ -87,8 +87,8 @@ configure launch paths/capabilities, not boolean service-enable switches.
 Configuration and private state are root-owned and protected with 0600/0700.
 
 The example Debian machine is `debian-local`, with rootfs
-`/srv/container-infrastructure/debian-rootfs`. The Incus machine is `incus-manager`, with rootfs
-`/srv/container-infrastructure/incus-rootfs`. Both runtime trees remain outside their rootfs and
+`/workspace/debian-rootfs`. The Incus machine is `incus-manager`, with rootfs
+`/workspace/incus-rootfs`. Both runtime trees remain outside their rootfs and
 outside the source repository. The trusted Incus profile uses
 `private_users="no"`, `allow_nesting=true`, `allow_tun=false`. The direct Debian
 demo defaults to `private_users="identity"` and `allow_tun=false`. Review any
@@ -111,7 +111,7 @@ is separate from enabling/disabling the entire Incus manager.
 Register this command in the platform's external five-minute schedule:
 
 ```sh
-/bin/sh /srv/container-infrastructure/infrastructure-runtime/startup.sh --trigger scheduled
+/bin/sh /workspace/infrastructure-runtime/startup.sh --trigger scheduled
 ```
 
 It starts one missing supervisor, honors persistent disables and never

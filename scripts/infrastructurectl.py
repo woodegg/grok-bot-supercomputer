@@ -11,13 +11,13 @@ import time
 import tomllib
 from lifecycle_events import EventLog, process_ticks, show_events
 
-DEFAULT=Path('/srv/container-infrastructure/infrastructure-runtime/etc/config.toml')
+DEFAULT=Path('/workspace/infrastructure-runtime/etc/config.toml')
 
 def configuration(path):
     data=tomllib.loads(path.read_text())
     for field in ('runtime','host_rootfs'):
         p=Path(data[field])
-        if not p.is_absolute() or str(p) in ('/','/srv/container-infrastructure'):
+        if not p.is_absolute() or str(p) in ('/','/workspace'):
             raise ValueError('Dedicated absolute '+field+' required')
         data[field]=p.resolve()
     for name, env in data['environments'].items():

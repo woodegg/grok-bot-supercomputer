@@ -9,7 +9,7 @@ import tempfile
 import time
 import uuid
 
-BASE=Path('/srv/container-infrastructure/infrastructure-runtime')
+BASE=Path('/workspace/infrastructure-runtime')
 def run(*argv,input=None,timeout=120):
     p=subprocess.run(argv,input=input,text=True,capture_output=True,timeout=timeout)
     if p.returncode:
@@ -103,9 +103,9 @@ def main():
         assert record['expanded_config'].get('security.privileged','false')=='false'
         assert incus('exec',name,'--','cat','/root/check')=='original'
         passed('Incus installation and snapshots survive repeated complete stop/start')
-        old=int(Path('/srv/container-infrastructure/incus-runtime/state/manager.pid').read_text().split()[0])
+        old=int(Path('/workspace/incus-runtime/state/manager.pid').read_text().split()[0])
         os.kill(old,signal.SIGKILL)
-        wait(lambda:int(Path('/srv/container-infrastructure/incus-runtime/state/manager.pid').read_text().split()[0])!=old and ready(),'killed guest manager recovery')
+        wait(lambda:int(Path('/workspace/incus-runtime/state/manager.pid').read_text().split()[0])!=old and ready(),'killed guest manager recovery')
         wait(lambda:incus('exec',name,'--','cat','/root/check')=='original','orphan instance persistence')
         passed('killed nspawn manager: verified orphan guest powers off and supervisor restores persistent instances')
     finally:

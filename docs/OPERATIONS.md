@@ -1,11 +1,13 @@
 # Operations
 
-Use /srv/container-infrastructure/infrastructure-runtime/bin commands. Optional
-~/.local/bin symlinks can expose infractl, sv and incus. Wrappers use sudo -n
+Use /workspace/infrastructure-runtime/bin commands. The installer exposes
+infractl, sv, incus, debianctl and tailscale through ~/.local/bin for the invoking
+user, preserving existing commands, and configures Bash PATH. For an existing
+terminal, run `export PATH="$HOME/.local/bin:$PATH"`. Wrappers use sudo -n
 as needed. The SSH operator account has the controls in its login and sudo PATH.
 
 ```sh
-export PATH="/srv/container-infrastructure/infrastructure-runtime/bin:$PATH"
+export PATH="/workspace/infrastructure-runtime/bin:$PATH"
 infractl status
 sv status debian incus sshd tailscaled
 infractl enable debian
@@ -57,9 +59,9 @@ this is not a hostile multi-tenant isolation environment.
 
 ```sh
 # Manage native packages/units in the manager without replacing its database:
-sudo /srv/container-infrastructure/incus-runtime/bin/debianctl exec -- apt-get update
-sudo /srv/container-infrastructure/incus-runtime/bin/debianctl exec -- apt-get install PACKAGE
-sudo /srv/container-infrastructure/incus-runtime/bin/debianctl exec -- systemctl status incus
+sudo /workspace/incus-runtime/bin/debianctl exec -- apt-get update
+sudo /workspace/incus-runtime/bin/debianctl exec -- apt-get install PACKAGE
+sudo /workspace/incus-runtime/bin/debianctl exec -- systemctl status incus
 # Native outer tools package maintenance, while the named access service runs:
 infractl host-exec sshd -- apt-get update
 infractl host-exec sshd -- apt-get install PACKAGE
@@ -78,7 +80,7 @@ and root login. Its keys/config/state live in infrastructure-rootfs.
 The five-minute command is:
 
 ```sh
-/bin/sh /srv/container-infrastructure/infrastructure-runtime/startup.sh --trigger scheduled
+/bin/sh /workspace/infrastructure-runtime/startup.sh --trigger scheduled
 ```
 
 It is idempotent and honors whole-supervisor and individual-service disables.

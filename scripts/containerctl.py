@@ -13,7 +13,7 @@ import time
 import tomllib
 from lifecycle_events import EventLog, show_events, timestamp
 
-DEFAULT_CONFIG = Path('/srv/container-infrastructure/debian-runtime/etc/config.toml')
+DEFAULT_CONFIG = Path('/workspace/debian-runtime/etc/config.toml')
 
 def configuration(path):
     with path.open('rb') as source:

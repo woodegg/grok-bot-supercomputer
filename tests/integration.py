@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import uuid
 
-CONTROL = os.environ.get('DEBIANCTL', '/srv/container-infrastructure/debian-runtime/bin/debianctl')
+CONTROL = os.environ.get('DEBIANCTL', '/workspace/debian-runtime/bin/debianctl')
 
 def control(*args, input=None):
     result = subprocess.run([CONTROL, *args], input=input, text=True, capture_output=True, timeout=90)
@@ -26,7 +26,7 @@ def main():
     assert guest('systemctl', 'is-system-running') == 'running'
     identity = guest('cat', '/etc/machine-id')
     original_operator = guest('getent', 'passwd', 'operator')
-    state_dir = Path(os.environ.get('DEBIAN_STATE', '/srv/container-infrastructure/debian-runtime/state'))
+    state_dir = Path(os.environ.get('DEBIAN_STATE', '/workspace/debian-runtime/state'))
     try:
         guest('useradd', '-m', '-s', '/bin/bash', name)
         account_created = True

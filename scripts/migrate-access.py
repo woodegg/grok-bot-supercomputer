@@ -9,13 +9,13 @@ import time
 if os.geteuid()!=0:
     os.execv('/usr/bin/sudo',['sudo','-n','/usr/bin/python3',str(Path(__file__).resolve()),*sys.argv[1:]])
 os.umask(0o077)
-source=Path('/srv/container-infrastructure/debian-rootfs')
-target=Path('/srv/container-infrastructure/infrastructure-rootfs')
-runtime=Path('/srv/container-infrastructure/infrastructure-runtime')
+source=Path('/workspace/debian-rootfs')
+target=Path('/workspace/infrastructure-rootfs')
+runtime=Path('/workspace/infrastructure-runtime')
 backup=runtime/'state/access-migration-backup'
-sys.path.insert(0,'/srv/container-infrastructure/debian-runtime/libexec')
+sys.path.insert(0,'/workspace/debian-runtime/libexec')
 from containerctl import configuration,guest_run
-cfg=configuration(Path('/srv/container-infrastructure/debian-runtime/etc/config.toml'))
+cfg=configuration(Path('/workspace/debian-runtime/etc/config.toml'))
 def guest(*command):
     return guest_run(cfg,list(command),check=True,text=True,capture_output=True,timeout=40).stdout.strip()
 def infra(*command):

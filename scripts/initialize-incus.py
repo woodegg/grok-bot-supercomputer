@@ -10,11 +10,11 @@ import sys
 import time
 import uuid
 
-CLI='/srv/container-infrastructure/infrastructure-runtime/bin/incus'
-RUNTIME=Path('/srv/container-infrastructure/infrastructure-runtime')
-NFT=Path('/srv/container-infrastructure/infrastructure-rootfs/usr/sbin/nft')
-LOADER=Path('/srv/container-infrastructure/infrastructure-rootfs/lib64/ld-linux-x86-64.so.2')
-LIB='/srv/container-infrastructure/infrastructure-rootfs/usr/lib/x86_64-linux-gnu'
+CLI='/workspace/infrastructure-runtime/bin/incus'
+RUNTIME=Path('/workspace/infrastructure-runtime')
+NFT=Path('/workspace/infrastructure-rootfs/usr/sbin/nft')
+LOADER=Path('/workspace/infrastructure-rootfs/lib64/ld-linux-x86-64.so.2')
+LIB='/workspace/infrastructure-rootfs/usr/lib/x86_64-linux-gnu'
 
 def incus(*args):
     return subprocess.check_output([CLI,*args],text=True).strip()
@@ -63,8 +63,8 @@ def guard(specfile):
     # Independent of the Incus guest/API. Never flush an existing platform table.
     if spec['new_bridge']:
         subprocess.run(['/usr/sbin/ip','link','delete','incusbr0'],check=False)
-    legacy='/srv/container-infrastructure/infrastructure-rootfs/usr/sbin/iptables-legacy'
-    environment=dict(os.environ,XTABLES_LIBDIR='/srv/container-infrastructure/infrastructure-rootfs/usr/lib/x86_64-linux-gnu/xtables')
+    legacy='/workspace/infrastructure-rootfs/usr/sbin/iptables-legacy'
+    environment=dict(os.environ,XTABLES_LIBDIR='/workspace/infrastructure-rootfs/usr/lib/x86_64-linux-gnu/xtables')
     for rule in spec['new_rules']:
         subprocess.run([str(LOADER),'--library-path',LIB,legacy,'-w','5','-D','FORWARD',*rule],env=environment,check=False)
     previous={tuple(row) for row in spec['tables']}
@@ -115,8 +115,8 @@ def main():
         ['-i','incusbr0','-o',interface,'-s','10.88.0.0/24','-m','comment','--comment','infra-incus-egress','-j','ACCEPT'],
         ['-i',interface,'-o','incusbr0','-d','10.88.0.0/24','-m','conntrack','--ctstate','RELATED,ESTABLISHED','-m','comment','--comment','infra-incus-return','-j','ACCEPT'],
     ]
-    legacy='/srv/container-infrastructure/infrastructure-rootfs/usr/sbin/iptables-legacy'
-    environment=dict(os.environ,XTABLES_LIBDIR='/srv/container-infrastructure/infrastructure-rootfs/usr/lib/x86_64-linux-gnu/xtables')
+    legacy='/workspace/infrastructure-rootfs/usr/sbin/iptables-legacy'
+    environment=dict(os.environ,XTABLES_LIBDIR='/workspace/infrastructure-rootfs/usr/lib/x86_64-linux-gnu/xtables')
     new_rules=[r for r in candidates if subprocess.run([str(LOADER),'--library-path',LIB,legacy,'-w','5','-C','FORWARD',*r],env=environment,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode]
     spec=RUNTIME/'state'/('network-guard-'+uuid.uuid4().hex+'.json')
     spec.write_text(json.dumps({'default':baseline,'probe_hosts':hosts,'tables':sorted(tables()),'new_bridge':not bool(bridge),'new_rules':new_rules}))
@@ -128,7 +128,7 @@ def main():
             start_new_session=True,stdin=subprocess.DEVNULL,stdout=log,stderr=log)
     if not bridge:
         incus('network','create','incusbr0',*[k+'='+v for k,v in expected.items()])
-    subprocess.run(['/srv/container-infrastructure/incus-runtime/bin/debianctl','exec','--','/usr/local/libexec/incus-firewall'],check=True)
+    subprocess.run(['/workspace/incus-runtime/bin/debianctl','exec','--','/usr/local/libexec/incus-firewall'],check=True)
     if not healthy(baseline, hosts):
         raise SystemExit('Connectivity changed; independent guard will roll back')
     if not nic:

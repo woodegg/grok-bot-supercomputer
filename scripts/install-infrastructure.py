@@ -12,12 +12,12 @@ if os.geteuid()!=0:
     os.execv('/usr/bin/sudo',['sudo','-n','/usr/bin/python3',str(Path(__file__).resolve()),*sys.argv[1:]])
 os.umask(0o077)
 project=Path(__file__).resolve().parent.parent
-runtime=Path('/srv/container-infrastructure/infrastructure-runtime')
-root=Path('/srv/container-infrastructure/infrastructure-rootfs')
-incus_runtime=Path('/srv/container-infrastructure/incus-runtime')
-if not (root/'etc/container-infrastructure-host-tools').is_file() or not Path('/srv/container-infrastructure/incus-rootfs/etc/container-infrastructure-incus').is_file():
+runtime=Path('/workspace/infrastructure-runtime')
+root=Path('/workspace/infrastructure-rootfs')
+incus_runtime=Path('/workspace/incus-runtime')
+if not (root/'etc/container-infrastructure-host-tools').is_file() or not Path('/workspace/incus-rootfs/etc/container-infrastructure-incus').is_file():
     raise SystemExit('Provision native host-tools and Incus filesystems first')
-incus_root=Path('/srv/container-infrastructure/incus-rootfs')
+incus_root=Path('/workspace/incus-rootfs')
 for source,destination,mode in (
     ('scripts/incus-nesting.py','usr/local/libexec/incus-nesting',0o755),
     ('scripts/incus-firewall.py','usr/local/libexec/incus-firewall',0o755),
@@ -36,7 +36,7 @@ incus_exists=(incus_runtime/'etc/config.toml').exists()
 subprocess.run(['/usr/bin/env','RUNTIME_DIR='+str(incus_runtime),str(project/'scripts/install-controls.sh')],check=True)
 incus_config=incus_runtime/'etc/config.toml'
 if not incus_exists:
-    incus_config.write_text('rootfs = "/srv/container-infrastructure/incus-rootfs"\nmachine = "incus-manager"\nstate_dir = "/srv/container-infrastructure/incus-runtime/state"\nprivate_users = "no"\nallow_tun = false\nallow_nesting = true\n')
+    incus_config.write_text('rootfs = "/workspace/incus-rootfs"\nmachine = "incus-manager"\nstate_dir = "/workspace/incus-runtime/state"\nprivate_users = "no"\nallow_tun = false\nallow_nesting = true\n')
     incus_config.chmod(0o600)
 for path,mode in ((runtime,0o755),(runtime/'bin',0o755),(runtime/'libexec',0o755),(runtime/'etc',0o700),(runtime/'state',0o700),(runtime/'services',0o755)):
     path.mkdir(parents=True,exist_ok=True);path.chmod(mode);os.chown(path,0,0)
@@ -51,14 +51,14 @@ for name in ('lifecycle_events.py','infrastructurectl.py','host-service.py','env
     finally:temp.unlink(missing_ok=True)
 config=runtime/'etc/config.toml'
 if not config.exists():
-    write(config,'''runtime = "/srv/container-infrastructure/infrastructure-runtime"
-host_rootfs = "/srv/container-infrastructure/infrastructure-rootfs"
+    write(config,'''runtime = "/workspace/infrastructure-runtime"
+host_rootfs = "/workspace/infrastructure-rootfs"
 [environments.debian]
-config = "/srv/container-infrastructure/debian-runtime/etc/config.toml"
-controller_dir = "/srv/container-infrastructure/debian-runtime/libexec"
+config = "/workspace/debian-runtime/etc/config.toml"
+controller_dir = "/workspace/debian-runtime/libexec"
 [environments.incus]
-config = "/srv/container-infrastructure/incus-runtime/etc/config.toml"
-controller_dir = "/srv/container-infrastructure/incus-runtime/libexec"
+config = "/workspace/incus-runtime/etc/config.toml"
+controller_dir = "/workspace/incus-runtime/libexec"
 ''',0o600)
 quote=lambda p:shlex.quote(str(p))
 for command in ('runsv','sv','svlogd'):
@@ -68,8 +68,8 @@ write(runtime/'bin/infractl','#!/bin/sh\nexec /usr/bin/python3 '+quote(runtime/'
 write(runtime/'startup.sh','#!/bin/sh\nexec '+quote(runtime/'bin/infractl')+' --trigger bootstrap "$@" startup\n',0o755)
 # Both wrappers work even from an outer SSH chroot by passing through infractl.
 write(runtime/'bin/tailscale','#!/bin/sh\nexec '+quote(runtime/'bin/infractl')+' host-exec tailscaled -- /usr/bin/tailscale "$@"\n',0o755)
-write(runtime/'bin/incus','#!/bin/sh\nif [ "$(id -u)" != 0 ]; then exec sudo -n "$0" "$@"; fi\nexec /usr/bin/nsenter --target 1 --mount --root --wd /srv/container-infrastructure/incus-runtime/bin/debianctl exec -- /usr/bin/incus "$@"\n',0o755)
-write(runtime/'bin/debianctl','#!/bin/sh\nif [ "$(id -u)" != 0 ]; then exec sudo -n "$0" "$@"; fi\nexec /usr/bin/nsenter --target 1 --mount --root --wd /srv/container-infrastructure/debian-runtime/bin/debianctl "$@"\n',0o755)
+write(runtime/'bin/incus','#!/bin/sh\nif [ "$(id -u)" != 0 ]; then exec sudo -n "$0" "$@"; fi\nexec /usr/bin/nsenter --target 1 --mount --root --wd /workspace/incus-runtime/bin/debianctl exec -- /usr/bin/incus "$@"\n',0o755)
+write(runtime/'bin/debianctl','#!/bin/sh\nif [ "$(id -u)" != 0 ]; then exec sudo -n "$0" "$@"; fi\nexec /usr/bin/nsenter --target 1 --mount --root --wd /workspace/debian-runtime/bin/debianctl "$@"\n',0o755)
 for name in ('debian','incus','sshd','tailscaled'):
     service=runtime/'services'/name
     new=not service.exists()
@@ -80,7 +80,7 @@ for name in ('debian','incus','sshd','tailscaled'):
     (service/'log').mkdir(exist_ok=True)
     write(service/'log/run','#!/bin/sh\nexec '+quote(runtime/'bin/svlogd')+' -tt '+quote(logdir)+'\n',0o755)
     if name in ('debian','incus'):
-        env_runtime=Path('/srv/container-infrastructure/debian-runtime') if name=='debian' else incus_runtime
+        env_runtime=Path('/workspace/debian-runtime') if name=='debian' else incus_runtime
         argv=['/usr/bin/python3',str(runtime/'libexec/environment-service.py'),str(env_runtime/'etc/config.toml'),str(env_runtime/'libexec'),str(service),str(runtime/'bin/sv')]
         check='exec '+quote(env_runtime/'bin/debianctl')+' status >/dev/null 2>&1'
         if new and (name=='incus' or (env_runtime/'state/disabled').exists()):
@@ -91,6 +91,8 @@ for name in ('debian','incus','sshd','tailscaled'):
         if new:(service/'down').touch(mode=0o600)
     write(service/'run','#!/bin/sh\nexec 2>&1\nexec '+shlex.join(argv)+'\n',0o755)
     write(service/'check','#!/bin/sh\n'+check+'\n',0o755)
-write(root/'etc/profile.d/container-infrastructure.sh','export PATH=/srv/container-infrastructure/infrastructure-runtime/bin:$PATH\n',0o644)
-write(root/'etc/sudoers.d/container-infrastructure-path','Defaults secure_path="/srv/container-infrastructure/infrastructure-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"\n',0o440)
+write(root/'etc/profile.d/container-infrastructure.sh','export PATH=/workspace/infrastructure-runtime/bin:$PATH\n',0o644)
+write(root/'etc/sudoers.d/container-infrastructure-path','Defaults secure_path="/workspace/infrastructure-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"\n',0o440)
+subprocess.run([sys.executable,str(project/'scripts/setup-user-commands.py'),
+                '--runtime',str(runtime)],check=True)
 print('Outer controls installed. Current guest/access state untouched. Use infractl start when ready.')

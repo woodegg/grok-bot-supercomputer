@@ -10,7 +10,7 @@ The contributor details in CONTRIBUTORS.md and the README, the canonical
 repository URL, and the configured contributor's commit name/email are
 intentionally retained as public attribution.
 
-Default paths under /srv/container-infrastructure, the operator account and
+Default paths under /workspace, the operator account and
 10.88.0.0/24 bridge are examples. Review and adapt them before installation;
 changing source defaults does not migrate an existing deployment.
 The source checkout can live in any writable project directory; installed
