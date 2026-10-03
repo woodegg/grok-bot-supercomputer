@@ -109,3 +109,9 @@ reported 33,554,432 bytes of logical zswapped data and 2,457,600 bytes of zswap
 memory during the test. Compression was left enabled. This synthetic test
 does not establish workload compression ratios or sustained performance;
 automatic reactivation and host recreation remain unverified.
+
+The README now explains the project's purpose on Grok Bot Computer and practical
+uses of its existing container, service, snapshot, recovery, access and swap
+features. Documentation was checked against the playbook and current qualification
+limits, with `git diff --check` passing. No installation or service changes were
+made for this documentation update.

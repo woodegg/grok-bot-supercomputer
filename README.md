@@ -38,6 +38,52 @@ This repository provides reusable source with generic example paths and an
 `operator` account. It contains no deployed root filesystems, credentials or
 runtime state. See [publication and privacy](docs/PRIVACY.md).
 
+## Make Grok Bot Computer a persistent Linux workspace
+
+The goal of this project is to give Grok Bot Computer a reusable foundation for
+development and long-running applications. Your agent can build on environments
+with their own installed packages, accounts and services instead of repeating
+setup in the outer root filesystem. You keep Grok Bot's existing host and add
+managed Linux environments whose data live separately in `/workspace`.
+
+Here is how to put that foundation to work:
+
+- **Create an environment for each project.** Use Incus for development tools,
+  application services or experiments, with separate package sets and data.
+  Start only the environments you need; leave the direct Debian demo disabled
+  for ordinary use.
+- **Run applications with native service management.** Install databases,
+  development servers or background workers inside a systemd container and
+  manage them with its normal package tools and service units. Applications
+  need their own setup; this playbook supplies the infrastructure.
+- **Reuse working setups.** Snapshot a container before an upgrade and clone a
+  prepared environment for another project. Export backups to independently
+  preserved storage; snapshots on the same host do not protect against losing
+  that storage.
+- **Recover the environment when the host changes.** Preserve complete
+  rootfs/runtime trees with ownership and metadata, then use the documented
+  bootstrap schedule to recover enabled infrastructure. Recovery depends on
+  the platform retaining or restoring those trees.
+- **Work from your own computer.** Configure optional SSH and Tailscale access
+  with your keys and access policy, then administer the environments remotely.
+  A desktop or remote-desktop service can also be installed inside a container.
+- **Handle occasional memory pressure.** The optional tested setup adds 4 GiB
+  disk swap with zswap compression for a host with approximately 16 GiB RAM.
+  It provides memory headroom; it consumes CPU and RAM for compression and may
+  use slower disk I/O. See the [swap playbook](docs/FROM-SCRATCH.md#optional-outer-host-swap)
+  for sizing, activation and recovery.
+
+For example, keep one container as your development environment, another for
+your application's database, and a clone for testing dependency upgrades.
+An agent can run builds and tests inside those environments while their tools
+and data remain available for the next session.
+
+The practical power comes from reusable software environments, service recovery
+and convenient experimentation. Containers share the host's CPU, RAM and kernel;
+this project does not add hardware or guarantee uninterrupted operation. Match
+build concurrency and running services to available resources. Delegated resource
+limits and virtual machines remain outside the tested setup.
+
 ## Installation
 
 ### Use a coding agent
