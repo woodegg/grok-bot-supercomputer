@@ -115,3 +115,10 @@ uses of its existing container, service, snapshot, recovery, access and swap
 features. Documentation was checked against the playbook and current qualification
 limits, with `git diff --check` passing. No installation or service changes were
 made for this documentation update.
+
+The README was subsequently reorganized around purpose, storage/recovery,
+installation, administration, Incus, optional access and swap. Repeated
+explanations were consolidated and the outdated instruction to adapt defaults
+already set to `/workspace` was removed. Local file links and the syntax of
+all 17 shell examples passed checks, along with `git diff --check`. Examples
+were parsed without execution; no deployment or service state changed.
