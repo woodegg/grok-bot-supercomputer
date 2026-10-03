@@ -84,3 +84,28 @@ operator records or deployment-specific endpoints. Review combined source
 inspection with credential-pattern checks. Generic paths, account names and
 access instructions were retained. This review did not cover Git history,
 ignored files or deployed state, and ran no installers or service tests.
+
+## Optional swap verification
+
+A fully allocated, root-private 4 GiB file outside the checkout was tested on
+the outer OverlayFS platform. Direct `swapon` failed with `Invalid argument`.
+Attaching the same formatted file to a free loop device and enabling swap on
+that device succeeded. An isolated process filled 32 MiB of anonymous memory,
+requested `MADV_PAGEOUT`, observed 32 MiB of swap usage, and verified the complete
+contents after reading them back. The swap was left active as requested.
+No services were restarted, parent cgroup controllers changed, or automatic
+startup registered. The playbook documents manual creation and recovery.
+
+This establishes activation and a small page-out/read-back operation, not
+sustained memory-pressure performance, per-instance Incus swap behavior,
+swapoff under pressure, or survival across platform recreation. Preservation
+of the backing file and safe reattachment remain host responsibilities.
+
+Zswap was subsequently enabled through its existing runtime interface without
+loading modules or changing its `lzo`/`zbud`/20-percent defaults. An isolated
+32 MiB anonymous-memory test used nonuniform repeated page contents, requested
+`MADV_PAGEOUT`, and verified every page after read-back. Cgroup statistics
+reported 33,554,432 bytes of logical zswapped data and 2,457,600 bytes of zswap
+memory during the test. Compression was left enabled. This synthetic test
+does not establish workload compression ratios or sustained performance;
+automatic reactivation and host recreation remain unverified.

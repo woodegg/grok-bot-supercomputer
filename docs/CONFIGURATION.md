@@ -108,6 +108,23 @@ is separate from enabling/disabling the entire Incus manager.
 
 ## Recurring startup and persistence
 
+### Optional swap policy
+
+Swap is an independent outer-host resource. The manual procedure in
+[FROM-SCRATCH.md](FROM-SCRATCH.md#optional-outer-host-swap) uses a root-owned
+`/workspace/swap-runtime` directory, a mode-0600 4 GiB `swapfile`, and a private
+`loop-device` record. The record is informational: rediscover the actual device
+by its backing file after host recreation. Creation/activation is explicitly
+opt-in; no swap enable setting or automatic activation is currently installed.
+Infrastructure start/stop and service enable/disable do not change swap.
+Preserving the file does not preserve the kernel's active swap registration.
+Optional zswap is enabled manually through the kernel sysfs interface, with
+the existing `lzo` compressor, `zbud` allocator and 20-percent pool limit in the
+tested configuration. Its setting is kernel-wide and has no installed startup
+hook or saved enable policy. Infrastructure service state does not control it.
+
+### Infrastructure startup
+
 Register this command in the platform's external five-minute schedule:
 
 ```sh

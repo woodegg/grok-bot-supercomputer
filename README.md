@@ -149,6 +149,11 @@ trees, numeric owners and metadata in `/workspace` across platform changes.
 
 ## Installation layout
 
+For optional 4 GiB outer-host swap with zswap compression, see the
+[swap playbook](docs/FROM-SCRATCH.md#optional-outer-host-swap). It covers sizing,
+the tested OverlayFS loop-device fallback, verification and manual recovery.
+Automatic activation after host recreation is not configured.
+
 For Grok Bot Computer, installed data lives under `/workspace` after the agent
 uses the adapted playbook defaults. Keep installed filesystems/runtimes outside
 the `/workspace/grok-bot-supercomputer` source checkout.

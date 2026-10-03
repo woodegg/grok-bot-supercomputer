@@ -26,6 +26,105 @@ refuses unrelated nonempty destinations. Do not rerun bootstrap provisioning
 against a partially built nonempty tree without investigating its contents.
 Native APT internals remain in each filesystem, including /var/lib/dpkg.
 
+## Optional outer-host swap
+
+Swap is shared by the outer kernel and its containers. Enable it only when the
+host installation policy permits it. Keep its backing file outside Git on
+storage preserved by the platform. A dedicated ext4/XFS filesystem is preferred.
+On the tested OverlayFS platform, direct swapfile activation failed with
+`Invalid argument`; using the same fully allocated file through a loop device
+worked. This fallback requires outer root, `CAP_SYS_ADMIN`, coreutils `dd`,
+util-linux `mkswap`, `losetup`, `swapon` and `swapoff`, and an available loop device.
+Loop-backed swap adds filesystem I/O and is not a substitute for sufficient RAM.
+
+For approximately 16 GiB RAM without hibernation, start with 4 GiB swap; 8 GiB
+is an option when measured workload peaks need additional headroom. The
+[Ubuntu sizing guide](https://help.ubuntu.com/community/SwapFaq) lists 4 GB for
+16 GB RAM, and [Red Hat guidance](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/8/html/managing_storage_devices/getting-started-with-swap_managing-storage-devices)
+recommends at least 4 GB for 8–64 GB RAM. Increase capacity based on observed
+swap usage and out-of-memory events. Sustained heavy swapping calls for less
+concurrency or more RAM. Zswap's compressed pool does not add swap capacity.
+
+For a fresh, explicitly requested 4 GiB setup, run on the outer host:
+
+```sh
+sudo -n bash <<'SH'
+set -euo pipefail
+test ! -e /workspace/swap-runtime
+install -d -m 700 /workspace/swap-runtime
+umask 077
+dd if=/dev/zero of=/workspace/swap-runtime/swapfile bs=1M count=4096 status=progress
+chmod 600 /workspace/swap-runtime/swapfile
+mkswap /workspace/swap-runtime/swapfile
+device=$(losetup --find --show /workspace/swap-runtime/swapfile)
+if swapon "$device"; then
+    printf '%s\n' "$device" > /workspace/swap-runtime/loop-device
+else
+    losetup --detach "$device"
+    exit 1
+fi
+swapon --show
+SH
+```
+
+The creation command refuses an existing directory. Never rerun `dd` or `mkswap`
+on an active or existing installation. If activation fails, inspect the error
+before retrying; the backing file remains for diagnosis.
+
+Loop numbers may change after recreation. To reactivate the preserved file,
+first inspect `sudo losetup --list` and `sudo swapon --show`. If that file already
+has an attached loop, use its device; otherwise attach it with
+`sudo losetup --find --show /workspace/swap-runtime/swapfile`. Run
+`sudo swapon DEVICE` only when that device is not already active, and update the
+root-private `loop-device` record. Do not format the file again.
+
+To stop, verify the device's backing file with `sudo losetup DEVICE`, then run
+`sudo swapoff DEVICE` followed by `sudo losetup --detach DEVICE`. Detach only
+after swapoff succeeds; swapoff may fail when RAM cannot accommodate swapped
+pages. Keep the file for reuse, or remove it only after successful detachment.
+
+This procedure does not register automatic activation or alter the infrastructure
+supervisor. `/etc/fstab` alone is insufficient with Tini PID1. Any future startup
+integration must honor a saved swap disable policy, serialize loop attachment,
+discover devices by backing file, and never allocate or format files during
+recurring startup. See [saved configuration](CONFIGURATION.md).
+
+### Optional compression with zswap
+
+If the host exposes `/sys/module/zswap/parameters/enabled`, zswap can cache
+swapped pages in compressed RAM while keeping the 4 GiB disk swap as backing
+storage. This is kernel-wide and requires explicit host authorization. It does
+not increase the configured swap capacity. Check the existing compressor,
+pool allocator and pool limit before enabling; do not load kernel modules on
+platforms that prohibit them.
+
+```sh
+sudo cat /sys/module/zswap/parameters/{enabled,compressor,zpool,max_pool_percent}
+sudo sh -c 'printf 1 > /sys/module/zswap/parameters/enabled'
+sudo cat /sys/module/zswap/parameters/enabled
+```
+
+The tested settings were `lzo`, `zbud` and `max_pool_percent=20`. The pool grows
+on demand; its limit is a percentage of kernel-visible RAM, not reserved RAM.
+When compression cannot accept a page, disk swap remains available. To stop
+caching new pages, write `0` to the same `enabled` parameter. Existing compressed
+pages remain until read back or freed. No automatic enablement is installed;
+recheck after platform recreation. Zram is a separate compressed RAM block
+device and is not required for this procedure.
+
+Check the result on the outer host:
+
+```sh
+sudo swapon --show
+free -h
+cat /sys/module/zswap/parameters/enabled
+```
+
+Expect approximately 4 GiB total swap and `Y` for zswap when enabled. Zero swap
+usage at idle is normal; these status checks alone do not prove compression.
+The isolated page-out/read-back verification and its limits are recorded in
+[BUILD-RECORD.md](BUILD-RECORD.md#optional-swap-verification).
+
 ## Provision native package roles
 
 Read any host installation policy first. Record already installed outer
