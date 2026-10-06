@@ -1,9 +1,10 @@
 # Persistent Linux environments for Grok Bot Computer
 
-This project provides an agent playbook for running Debian and Incus on Grok
-Bot Computer while retaining installed software and application data in
-`/workspace`. The outer host uses Tini; the added environments run systemd for
-native Linux package and service management.
+This project runs Debian and Incus on Grok Bot Computer using several
+**box-owned ext4 image files** in `/workspace/infra-images`. Loop devices mount
+these files as Linux filesystems, keeping system files, service identities and
+application data inside them. The outer host keeps its own PID1; the Debian demo
+and Incus manager run systemd for native package and service management.
 
 **Use Incus for ordinary container creation and management.** The separate
 systemd-nspawn Debian guest is a demonstration. Outer runit supervises the
@@ -36,66 +37,101 @@ kernel and network.
 
 ## Storage and recovery
 
-Software installed only in the outer root filesystem can disappear when that
-filesystem is replaced. Keep the source checkout and deployed data separate:
+### Why we use loop-mounted filesystems
 
-| Directory under `/workspace` | Contents |
+The earlier layout stored rootfs and runtime trees directly under `/workspace`.
+An observed platform recreation lost root-owned private files and deployment
+state even though the source checkout and many box-owned files survived.
+Choosing a workspace directory alone was insufficient to preserve a Linux
+installation with root-owned configuration, accounts and service identities.
+
+A loop-mounted ext4 image solves the ownership problem at two different levels:
+
+- **Outside the image:** the platform sees one ordinary file owned by `box`.
+- **Inside the image:** ext4 retains Linux numeric owners, permissions, symlinks
+  and filesystem metadata. System files can remain root-owned and private.
+- **After recreation:** preserved images can be mounted again at the same paths,
+  so native packages and saved service policy remain usable without reinstalling.
+
+We tested this with a cleanly unmounted 128 MiB image: after an actual recreation,
+its whole-file checksum was identical and internal root-owned 0700/0600 paths
+retained their permissions. The external box-owned control survived; the external
+root-owned private control disappeared. This is evidence for the approach, not a
+platform persistence guarantee. Full deployment recreation and consistency of
+platform capture while images are being written remain unverified.
+
+Loop devices provide the filesystem access; preservation depends on the platform
+keeping the backing files. Images still need consistent backups, and mounts must
+be recreated after host restart. Startup validates existing images and mounts
+rather than creating or formatting storage.
+
+### Several images, with stable mount paths
+
+We use several smaller images to separate system, runtime and application data.
+A full or damaged home image need not damage the immutable system base. Smaller
+images also allow separate capacity planning and offline checks, although they
+still share the risks of the host storage. All image files are owned by box,
+mode 0600, in a private directory outside the checkout.
+
+| Storage under `/workspace/infra-images` | Mounted use |
 | --- | --- |
-| `grok-bot-supercomputer` | Source and documentation |
-| `incus-rootfs` | Manager OS, database, certificates, images, instances and snapshots |
-| `incus-runtime` | Manager launch configuration, controls and lifecycle state |
-| `debian-rootfs` | Demo OS, packages, accounts, homes and journals |
-| `debian-runtime` | Demo launch configuration, controls and lifecycle state |
-| `infrastructure-rootfs` | Runit/OpenSSH/Tailscale tools, operator account and access identities |
-| `infrastructure-runtime` | Supervision, service policies, commands and private logs |
-| `swap-runtime` (optional) | Swap backing file and loop-device record |
+| Debian, tools and Incus system images | `/workspace/debian-rootfs`, `infrastructure-rootfs`, `incus-rootfs` |
+| Separate runtime images | Each environment's `/workspace/*-runtime` configuration, saved policy and logs |
+| Incus data image | Manager database, certificates and image metadata at manager `/var/lib/incus` |
+| Incus pool image | Ordinary instance storage at manager `/srv/incus-pool` |
+| Shared read-only base image | Common OS files for layered sandboxes |
+| One delta image per layered sandbox | OverlayFS upper/work directories for root filesystem changes |
+| One home image per layered sandbox | Persistent `/home`, independent of root replacement |
 
-Installed trees require root/sudo. Packages use native APT paths and databases
-inside their respective filesystems. Keep configuration, credentials, logs and
-backups outside Git; see [privacy](docs/PRIVACY.md).
+The first eight system/runtime/data/pool images have 6 GiB total capacity;
+sandbox images are added separately. Budget their full capacity: the persistence
+experiment's sparse image occupied its full capacity after restoration.
+The source remains `/workspace/grok-bot-supercomputer`; rootfs/runtime directories
+are mount destinations. Optional swap has its own separate setup.
 
-Recovery after host recreation depends on the platform preserving or restoring
-**complete rootfs/runtime trees with numeric ownership and metadata**, plus the
-required host capabilities. Keeping the source checkout alone is insufficient.
-Export backups to independently preserved storage; local snapshots do not
-protect against losing the host's storage. Platform recreation and external
-scheduler registration remain unverified by the local integration tests.
+### Shared bases and independent home data
 
-### Box-owned ext4 images
+For similar sandboxes, OverlayFS combines a shared read-only base with each
+sandbox's writable delta. A write goes into that sandbox's delta; writes under
+`/home` go into its separate home image. Multiple sandboxes share the base bytes
+while keeping their changes and home data independent.
 
-When the platform preserves box-owned files but drops root-private files, use
-[the image storage playbook](docs/IMAGE-STORAGE.md). It keeps Debian systems,
-runtime policy, Incus data/pool and sandbox data in several box-owned ext4 images.
-An actual small-image recreation test retained identical contents and internal
-root permissions. Full deployment recreation and live capture remain unverified.
+To replace an OS base, stop the sandbox, select a new base and a fresh delta,
+and retain its home. Old bases/deltas can remain for rollback. Reapply intended
+packages and configuration; old changes are not automatically compatible with a
+new OS. See the [layered sandbox procedure](docs/IMAGE-STORAGE.md#replace-a-base-and-roll-back).
+Ordinary Incus-managed instances remain available through the `dir` pool.
 
-The shared-base option uses read-only base images plus a separate delta and home
-image per sandbox. Its custom roots require stopped image backups; native Incus
-snapshot/clone/export commands do not capture them. Ordinary Incus instances
-continue to support native snapshots and clones.
+Native Incus snapshot/clone/export commands do not capture externally managed
+layered roots and homes. The wrappers refuse those operations for registered
+layered sandboxes; ordinary Incus instances retain native snapshot/clone support.
 
-Image installations also support versioned quick backups and stopped full
-checkpoints: `backupctl enable` and `backupctl status`. See the
-[backup and recovery procedure](docs/IMAGE-STORAGE.md#automatic-versioned-backups)
-for capture interruptions, retention and independent storage requirements.
+### Versioned backup and recovery
 
-For an image installation, use the permanent five-minute scheduling command:
+`backupctl enable` starts automatic quick backups every five minutes (keep 12)
+and full checkpoints every six hours (keep three). Quick capture briefly pauses
+running layered sandboxes and freezes their owned writable filesystems; full
+checkpoints stop infrastructure and copy all cleanly unmounted images. Services
+resume before compression, preserving saved disabled states. Full checkpoints
+also cover ordinary Incus pool data; quick backups focus on the managed layers.
 
 ```sh
-/bin/sh /workspace/infra-images/startup.sh --trigger scheduled
+backupctl status
+backupctl quick
+backupctl checkpoint
 ```
 
-Send this prompt to the Grok Bot chat window to create or update the existing
-task, avoiding duplicate tasks:
+Backups live outside Git under `/workspace/infra-images/backups`. Verify and
+extract a completed generation into a new recovery candidate before restoring;
+never overwrite mounted images. See [backup and recovery](docs/IMAGE-STORAGE.md#automatic-versioned-backups)
+for interruption times, SQLite handling and independent storage configuration.
+Local versions cannot protect against loss or rollback of the whole workspace.
+Keep credentials, runtime data and backups out of Git; see [privacy](docs/PRIVACY.md).
 
-```text
-Create or update one task that runs every five minutes on my Grok Bot Computer:
-/bin/sh /workspace/infra-images/startup.sh --trigger scheduled
-Run the command and report failures. Preserve saved disabled service states.
-Do not reinstall, initialize storage, or enable disabled services.
-```
-
-Registration remains pending until that chat task is created or updated.
+For a fresh image deployment, follow [IMAGE-STORAGE.md](docs/IMAGE-STORAGE.md)
+alongside the native-package playbook. Preserve existing installation paths,
+identities and service policy when reusing a deployment; replacing an existing
+installation with images requires a separate migration plan.
 
 ## Installation
 
@@ -114,14 +150,16 @@ Set up https://github.com/woodegg/grok-bot-supercomputer on my Grok Bot Computer
 1. Clone the repository into /workspace/grok-bot-supercomputer. Reuse an
    existing checkout rather than replacing it.
 2. Read AGENTS.md, the host's installation policy if present, and
-   docs/FROM-SCRATCH.md, docs/CONFIGURATION.md and docs/OPERATIONS.md.
+   docs/FROM-SCRATCH.md, docs/CONFIGURATION.md, docs/OPERATIONS.md and
+   docs/IMAGE-STORAGE.md.
 3. Check the playbook prerequisites, available disk space, namespace/cgroup
    permissions and bridge subnet conflicts before provisioning.
-4. Use the documented /workspace defaults for a fresh installation, keeping
-   rootfs/runtime trees outside the source checkout. Follow
-   docs/FROM-SCRATCH.md using its signed native packages, provisioning scripts,
-   control installers and Incus initializer. Preserve existing installation paths
-   and state when reusing a deployment. Keep credentials and runtime data out of Git.
+4. For a fresh installation, use docs/IMAGE-STORAGE.md to create separate
+   box-owned ext4 system/runtime/data/pool images in /workspace/infra-images,
+   outside the checkout. Mount them at the documented /workspace paths, then
+   follow docs/FROM-SCRATCH.md with signed native packages, provisioning scripts,
+   control installers and Incus initializer. Reuse existing deployments without
+   replacing paths, images, identities or state. Keep private data out of Git.
 5. On a fresh installation, enable Incus and disable the direct Debian demo.
    Preserve saved service policy and identities on an existing installation.
    Leave SSHD/Tailscale disabled unless I supply the access setup separately.
@@ -159,21 +197,21 @@ After installation, send this prompt in the **Grok Bot chat window** to create
 its recurring task. Use a five-minute interval:
 
 ```text
-Create a scheduled task on my Grok Bot Computer that runs every 5 minutes.
-On each run, execute this command:
-
-/bin/sh /workspace/infrastructure-runtime/startup.sh --trigger scheduled
-
-Confirm that the recurring task has been created.
+Create or update one task on my Grok Bot Computer that runs every five minutes:
+/bin/sh /workspace/infra-images/startup.sh --trigger scheduled
+Run the command and report failures. Preserve saved disabled service states.
+Do not reinstall, initialize storage, or enable disabled services.
+Confirm that the recurring task has been created or updated; avoid duplicates.
 ```
 
+Image deployments use this box-owned entrypoint outside the mounted runtime.
 Use the installed startup path reported by your agent if your existing deployment
 has a different layout. The command needs root or a trusted operator with
 working noninteractive sudo. Confirm task creation in chat, then check the
 startup events after its first run:
 
 ```sh
-export PATH=/workspace/infrastructure-runtime/bin:$PATH
+export PATH="$HOME/.local/bin:$PATH"
 infractl status
 infractl events 20
 ```
@@ -181,7 +219,9 @@ infractl events 20
 A `scheduled` trigger in the events confirms that the bootstrap command was
 invoked. Review its outcome to see whether it started infrastructure, found it
 already running, or skipped deliberately disabled services. Task registration
-and a successful bootstrap run are separate checks.
+and a successful bootstrap run are separate checks. Registration remains pending
+until the chat task has actually been created. The backup worker is a separate
+timer; its events do not prove that Grok scheduled bootstrap is running.
 
 Runit recovers exited services immediately. The five-minute chat task checks for
 a missing supervisor and starts it while honoring saved service policy.
@@ -202,7 +242,7 @@ configured inside the tools filesystem. Command wrappers use noninteractive
 sudo when needed. You can also use the installed command directory directly:
 
 ```sh
-export PATH=/workspace/infrastructure-runtime/bin:$PATH
+export PATH="$HOME/.local/bin:$PATH"
 infractl status
 sv status debian incus sshd tailscaled
 infractl events 20
@@ -284,7 +324,8 @@ incus stop demo
 incus start demo
 ```
 
-Create a checkpoint, restore it with the container stopped, or clone it into
+For an ordinary Incus-managed instance such as `demo`, create a checkpoint,
+restore it with the container stopped, or clone it into
 another instance. Restoration replaces changes made after the checkpoint:
 
 ```sh
