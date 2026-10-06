@@ -193,3 +193,19 @@ checks in a private mount namespace. Incus and both layered sandboxes remain
 running; Debian demo, SSHD and Tailscale remain disabled. No full four-service
 integration suite or full deployment platform reset was performed. External
 backup storage remains unconfigured; local generations are not offsite backups.
+
+## v0.2.0 release qualification
+
+This release makes box-owned ext4 images the documented fresh-installation
+approach, with shared read-only sandbox bases, independent delta/home images
+and versioned backups. Existing deployments require deliberate migration;
+updating source does not migrate data or update deployed control copies.
+
+All 30 tests passed again, including eight disposable filesystem checks in a
+private mount namespace. Python parsing, shell script syntax, README shell
+example syntax, local file links and Git whitespace checks passed. Release
+preparation did not restart deployed services or run disruptive integration
+tests. Earlier image/backup qualification remains applicable with its stated
+limits: full deployment platform recreation, live platform capture consistency,
+independent external backup and external Grok schedule verification remain
+unqualified.
