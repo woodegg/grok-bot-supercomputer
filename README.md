@@ -61,6 +61,42 @@ Export backups to independently preserved storage; local snapshots do not
 protect against losing the host's storage. Platform recreation and external
 scheduler registration remain unverified by the local integration tests.
 
+### Box-owned ext4 images
+
+When the platform preserves box-owned files but drops root-private files, use
+[the image storage playbook](docs/IMAGE-STORAGE.md). It keeps Debian systems,
+runtime policy, Incus data/pool and sandbox data in several box-owned ext4 images.
+An actual small-image recreation test retained identical contents and internal
+root permissions. Full deployment recreation and live capture remain unverified.
+
+The shared-base option uses read-only base images plus a separate delta and home
+image per sandbox. Its custom roots require stopped image backups; native Incus
+snapshot/clone/export commands do not capture them. Ordinary Incus instances
+continue to support native snapshots and clones.
+
+Image installations also support versioned quick backups and stopped full
+checkpoints: `backupctl enable` and `backupctl status`. See the
+[backup and recovery procedure](docs/IMAGE-STORAGE.md#automatic-versioned-backups)
+for capture interruptions, retention and independent storage requirements.
+
+For an image installation, use the permanent five-minute scheduling command:
+
+```sh
+/bin/sh /workspace/infra-images/startup.sh --trigger scheduled
+```
+
+Send this prompt to the Grok Bot chat window to create or update the existing
+task, avoiding duplicate tasks:
+
+```text
+Create or update one task that runs every five minutes on my Grok Bot Computer:
+/bin/sh /workspace/infra-images/startup.sh --trigger scheduled
+Run the command and report failures. Preserve saved disabled service states.
+Do not reinstall, initialize storage, or enable disabled services.
+```
+
+Registration remains pending until that chat task is created or updated.
+
 ## Installation
 
 ### Use a coding agent

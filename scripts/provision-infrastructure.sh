@@ -17,7 +17,7 @@ if [ "$ROLE" = host-tools ]; then
  chroot "$ROOTFS" apt-get -y --no-install-recommends install runit openssh-server nftables
  chroot "$ROOTFS" curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg -o /usr/share/keyrings/tailscale-archive-keyring.gpg
  chroot "$ROOTFS" curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.tailscale-keyring.list -o /etc/apt/sources.list.d/tailscale.list
- chroot "$ROOTFS" apt-get update
+ chroot "$ROOTFS" apt-get -o APT::Update::Error-Mode=any update
  chroot "$ROOTFS" apt-get -y --no-install-recommends install tailscale
  cp "$PROJECT/templates/sshd-container.conf" "$ROOTFS/etc/ssh/sshd_config.d/container-infrastructure.conf"
  install -D -m 755 "$PROJECT/scripts/tailscale-baseline.py" "$ROOTFS/usr/local/libexec/tailscale-baseline"

@@ -137,6 +137,10 @@ def host_exec(config,name,command):
         '/usr/bin/env','-i','PATH=/usr/sbin:/usr/bin:/sbin:/bin','HOME=/root','LANG=C.UTF-8',*command]).returncode
 
 def main():
+    storage = Path('/workspace/infra-images/image-storage.py')
+    if storage.is_file() and os.environ.get('INFRA_STORAGE_VERIFIED') != '1':
+        subprocess.run([sys.executable, str(storage), 'mount'], check=True,
+                       stdout=subprocess.DEVNULL)
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',type=Path,default=DEFAULT)
     parser.add_argument('--trigger',choices=('manual','scheduled','bootstrap','host-startup'),default='manual')
@@ -210,6 +214,9 @@ def main():
                 outcome=args.action+'_'+name
                 events.emit('service_configured',service=name,outcome=outcome)
         print(outcome)
+        backup=Path('/workspace/infra-images/backupctl.py')
+        if args.action in ('start','startup','restart') and outcome!='skipped_disabled' and backup.exists():
+            subprocess.run([sys.executable,str(backup),'start-worker'],check=True)
         events.finish(outcome)
     except Exception as error:
         events.finish('failed',error)

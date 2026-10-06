@@ -1,5 +1,19 @@
 # Operations
 
+For image deployments, `backupctl status` reports saved policy and completed
+recovery points. Use `backupctl quick` for layered sandbox capture and
+`backupctl checkpoint` for a full stopped-image checkpoint. Checkpoints briefly
+interrupt enabled infrastructure and then restore its saved policy. Verify and
+extract into a new candidate before planning restoration; see
+[versioned backups](IMAGE-STORAGE.md#automatic-versioned-backups). Local archives
+still require independent storage protection.
+
+For a loop-image deployment, start with the box-owned
+`/workspace/infra-images/startup.sh` and use the image-aware ~/.local/bin commands.
+Read [image storage operations](IMAGE-STORAGE.md) for mount checks, shared-base
+sandbox creation/upgrades and consistent stopped backups. Native snapshots and
+clones below apply to ordinary Incus-managed instances, not custom layered roots.
+
 Use /workspace/infrastructure-runtime/bin commands. The installer exposes
 infractl, sv, incus, debianctl and tailscale through ~/.local/bin for the invoking
 user, preserving existing commands, and configures Bash PATH. For an existing

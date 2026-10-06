@@ -83,10 +83,21 @@ def main():
     hosts=probe_hosts()
     pools=json.loads(incus('storage','list','--format=json'))
     local=next((p for p in pools if p['name']=='local'),None)
+    image_manifest=Path('/workspace/infra-images/manifest.json')
+    pool_source=None
+    if image_manifest.exists():
+        saved=json.loads(image_manifest.read_text())
+        pool_entry=next(e for e in saved['images'] if e['name']=='incus-pool')
+        target=Path(pool_entry['target'])
+        if not os.path.ismount(target):
+            raise SystemExit('Required Incus pool image is not mounted')
+        pool_source='/'+str(target.relative_to('/workspace/incus-rootfs'))
     if local and local['driver']!='dir':
         raise SystemExit('Existing local pool is not dir; left untouched')
+    if local and pool_source and local['config'].get('source')!=pool_source:
+        raise SystemExit('Existing local pool source differs; left untouched')
     if not local:
-        incus('storage','create','local','dir')
+        incus('storage','create','local','dir',*(['source='+pool_source] if pool_source else []))
     profile=json.loads(incus('query','/1.0/profiles/default'))
     disk=profile['devices'].get('root')
     if disk and disk!={'type':'disk','path':'/','pool':'local'}:

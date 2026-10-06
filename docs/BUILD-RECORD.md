@@ -129,3 +129,67 @@ For v0.1.0, all 16 unit tests passed, Python source parsed successfully, and
 shell scripts passed `bash -n`. Release preparation made no installation or
 service changes. Disruptive integration tests were not rerun against active
 work; earlier integration evidence and its limits remain as documented above.
+
+## Box-owned image qualification
+
+A cleanly unmounted 128 MiB ext4 image owned by box survived an observed platform
+recreation with an identical whole-image SHA256, internal root-owned directory
+0700 and file0600. An external box-owned control retained its content; an external
+root-owned mode0600 control disappeared. Kernel boot and PID1 observations changed.
+The sparse image's allocated size grew from approximately 4.5 MiB to its full
+capacity after restoration. These observations do not establish platform rules.
+
+A fresh native Debian/Incus installation was subsequently built inside eight
+box-owned system/runtime/data/pool images, totaling 6 GiB capacity. Incus was
+enabled; the demo and both access services remained disabled. Native Debian
+security updates and Tailscale packages used signature-verified repositories.
+The host's failing Debian APT HTTPS transport required the official HTTP mirror;
+signature/package verification remained enabled. Incus version was 6.0.4.
+
+Two unprivileged Alpine sandboxes shared one read-only base, with distinct ext4
+delta/home images. Writes, home data and package installation remained isolated.
+Both upper/work directories resided on each delta filesystem. Root ID mapping
+was verified as 0 -> 1000000 with range16777216; OverlayFS used userxattr.
+BusyBox guests required their halt/reboot signals rather than systemd defaults;
+graceful stop/restart passed after that correction.
+
+A second base marker and fresh delta demonstrated root replacement with retained
+home, and rollback restored the original upper and installed package. Both bases
+used the same Alpine release; this was not a distribution upgrade qualification.
+The normal Debian instance/snapshot/restore/clone checks passed separately.
+The wrapper refused misleading native snapshot/clone operations for layered roots.
+
+All 16 existing unit tests and six real disposable ext4 mount tests passed.
+The latter checked idempotent writes, missing image preflight, UUID mismatch,
+failure rollback, changed base checksums and read-only enforcement in a private mount namespace.
+The full four-service integration suite was not run. Whole-image shutdown and
+unmount completed; all 15 ext4 filesystem checks were clean. Remount/bootstrap
+retained supervisor disable, and an explicit start restored both running Alpine
+instances with root/home contents intact. Repeated startup retained one supervisor
+and preserved disabled services. Private deployment details remain in an image,
+outside the checkout.
+
+Full deployment platform recreation, live platform capture consistency and the
+updated external scheduled task remain unverified. The prior lost sandbox was
+not recovered. See [IMAGE-STORAGE.md](IMAGE-STORAGE.md) for current procedures.
+
+## Versioned image backup qualification
+
+Automatic quick backups were enabled at 300 seconds, with six-hour full
+checkpoints and retention of 12 quick/three full generations. A detached worker
+produced an observed automatic quick generation; repeated bootstrap retained
+one worker. This is separate from the external Grok scheduled bootstrap task.
+
+Quick captures took approximately 2–4 seconds; full stopped-image captures took
+13–14 seconds and resumed services before compression. Independent recovery
+candidates extracted successfully. All 15 images in a full candidate passed
+offline ext4 checks, UUID/base checks and executable helper checks. A disposable
+SQLite WAL fixture retained its committed row in a standalone verified backup.
+Injected copy failure thawed filesystems and resumed paused instances. An
+interrupted maintenance journal recovery also passed a disposable ext4 check.
+
+The final test run covers 30 tests, including eight real disposable filesystem
+checks in a private mount namespace. Incus and both layered sandboxes remain
+running; Debian demo, SSHD and Tailscale remain disabled. No full four-service
+integration suite or full deployment platform reset was performed. External
+backup storage remains unconfigured; local generations are not offsite backups.

@@ -1,5 +1,11 @@
 # Build from scratch
 
+After completing and verifying an image installation, enable its optional
+versioned backup worker with `backupctl enable`. Defaults are five-minute quick
+captures and six-hour full checkpoints; the latter briefly stop services.
+Configure independent backup storage separately. See
+[capture and recovery details](IMAGE-STORAGE.md#automatic-versioned-backups).
+
 For selecting both, either or neither environment and changing launch settings,
 see [environment configuration](CONFIGURATION.md). Enable/disable policy is
 saved through infractl rather than launch-config TOML switches.
@@ -11,6 +17,11 @@ Use dedicated persistent storage permitted by your host installation policy.
 Keep credentials and runtime trees outside Git; do not publish live data.
 
 ## Prerequisites and topology
+
+For box-owned loop images rather than directly preserved directory trees, follow
+[IMAGE-STORAGE.md](IMAGE-STORAGE.md) for the storage creation and mount order,
+then apply the same signed native provisioning, controls and qualification below.
+Recurring startup must use the permanent image-aware entrypoint in that guide.
 
 The tested outer platform is Debian 13 amd64, Tini PID1, Python3.13, root or
 sudo -n, util-linux mount/nsenter/ip, and writable cgroup v2 child directories.

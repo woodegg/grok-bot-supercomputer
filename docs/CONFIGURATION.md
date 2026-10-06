@@ -1,5 +1,12 @@
 # Configure Debian and Incus environments
 
+Image deployments save automatic backup policy outside Git in
+`/workspace/infra-images/backup-policy.json`. `backupctl enable` defaults to quick
+capture every 300 seconds (12 retained generations) and full checkpoints every
+21600 seconds (three retained). `backupctl disable` preserves service policy.
+The maintenance journal and archives also stay outside the checkout; see
+[image backup operations](IMAGE-STORAGE.md#automatic-versioned-backups).
+
 Use `infractl` for the whole Debian environment and the whole Incus manager.
 It uses noninteractive sudo when needed. The two environments can be enabled
 independently; outer SSHD and Tailscale have separate settings.
@@ -70,6 +77,13 @@ Use `infractl` for persistent policy; native `sv up/down/restart` controls the
 current process state without saving the same enable/disable policy.
 
 ## Saved policy and configuration paths
+
+In an [image installation](IMAGE-STORAGE.md), the same paths are mounted payloads
+inside box-owned ext4 images. Private policy, keys and logs stay in those images.
+`/workspace/infra-images/manifest.json` records image UUIDs and mount order;
+bootstrap mounts and verifies the complete set before reading service policy.
+Use `/workspace/infra-images/startup.sh --trigger scheduled` for the external
+task. The six default launch paths and saved disable semantics are unchanged.
 
 | Setting | Persistent location |
 | --- | --- |

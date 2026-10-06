@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 """Install root-owned outer controls; preserve existing config and down markers."""
 import os
+import json
+import pwd
 from pathlib import Path
 import shlex
 import shutil
@@ -66,9 +68,17 @@ for command in ('runsv','sv','svlogd'):
     write(runtime/'bin'/command,'#!/bin/sh\n'+preface+'exec '+quote(root/'lib64/ld-linux-x86-64.so.2')+' --library-path '+quote(root/'usr/lib/x86_64-linux-gnu')+' '+quote(root/'usr/bin'/command)+' "$@"\n',0o755)
 write(runtime/'bin/infractl','#!/bin/sh\nexec /usr/bin/python3 '+quote(runtime/'libexec/infrastructurectl.py')+' "$@"\n',0o755)
 write(runtime/'startup.sh','#!/bin/sh\nexec '+quote(runtime/'bin/infractl')+' --trigger bootstrap "$@" startup\n',0o755)
+image_manifest=Path('/workspace/infra-images/manifest.json')
+if image_manifest.exists():
+    # Public compatibility entrypoint can be preserved outside mounted images.
+    # The permanent image-storage entrypoint remains the preferred scheduler path.
+    write(runtime/'startup.sh','#!/bin/sh\nexec /workspace/infra-images/startup.sh "$@"\n',0o755)
+    account=pwd.getpwuid(json.loads(image_manifest.read_text())['owner_uid'])
+    os.chown(runtime/'startup.sh',account.pw_uid,account.pw_gid)
 # Both wrappers work even from an outer SSH chroot by passing through infractl.
 write(runtime/'bin/tailscale','#!/bin/sh\nexec '+quote(runtime/'bin/infractl')+' host-exec tailscaled -- /usr/bin/tailscale "$@"\n',0o755)
-write(runtime/'bin/incus','#!/bin/sh\nif [ "$(id -u)" != 0 ]; then exec sudo -n "$0" "$@"; fi\nexec /usr/bin/nsenter --target 1 --mount --root --wd /workspace/incus-runtime/bin/debianctl exec -- /usr/bin/incus "$@"\n',0o755)
+image_guard='if [ -f /workspace/infra-images/manifest.json ] && [ "${INFRA_STORAGE_VERIFIED:-}" != 1 ]; then exec /workspace/infra-images/incus "$@"; fi\n' if image_manifest.exists() else ''
+write(runtime/'bin/incus','#!/bin/sh\n'+image_guard+'if [ "$(id -u)" != 0 ]; then exec sudo -n "$0" "$@"; fi\nexec /usr/bin/nsenter --target 1 --mount --root --wd /workspace/incus-runtime/bin/debianctl exec -- /usr/bin/incus "$@"\n',0o755)
 write(runtime/'bin/debianctl','#!/bin/sh\nif [ "$(id -u)" != 0 ]; then exec sudo -n "$0" "$@"; fi\nexec /usr/bin/nsenter --target 1 --mount --root --wd /workspace/debian-runtime/bin/debianctl "$@"\n',0o755)
 for name in ('debian','incus','sshd','tailscaled'):
     service=runtime/'services'/name

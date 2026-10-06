@@ -19,13 +19,15 @@ cat > "$ROOTFS/usr/sbin/policy-rc.d" <<'EOF'
 exit 101
 EOF
 chmod 755 "$ROOTFS/usr/sbin/policy-rc.d"
-cat > "$ROOTFS/etc/apt/sources.list" <<'EOF'
-deb https://deb.debian.org/debian trixie main
-deb https://deb.debian.org/debian trixie-updates main
-deb https://deb.debian.org/debian-security trixie-security main
+APT_SCHEME=${DEBIAN_APT_SCHEME:-https}
+case "$APT_SCHEME" in http|https) ;; *) echo 'DEBIAN_APT_SCHEME must be http or https' >&2; exit 2;; esac
+cat > "$ROOTFS/etc/apt/sources.list" <<EOF
+deb $APT_SCHEME://deb.debian.org/debian trixie main
+deb $APT_SCHEME://deb.debian.org/debian trixie-updates main
+deb $APT_SCHEME://deb.debian.org/debian-security trixie-security main
 EOF
 cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
-chroot "$ROOTFS" /usr/bin/apt-get update
+chroot "$ROOTFS" /usr/bin/apt-get -o APT::Update::Error-Mode=any update
 chroot "$ROOTFS" /usr/bin/apt-get -y --no-install-recommends upgrade
 # Account is local to the guest. Do not import host password hashes or keys.
 chroot "$ROOTFS" /usr/sbin/useradd --create-home --uid 1000 --gid users --no-user-group --shell /bin/bash --groups sudo operator
