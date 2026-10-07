@@ -128,6 +128,13 @@ for interruption times, SQLite handling and independent storage configuration.
 Local versions cannot protect against loss or rollback of the whole workspace.
 Keep credentials, runtime data and backups out of Git; see [privacy](docs/PRIVACY.md).
 
+To measure preservation, use the [survivability check](docs/IMAGE-STORAGE.md#measure-survival-before-and-after-recreation).
+It records hashes, filesystem UUIDs and permissions before/after recreation.
+Once prepared, every bootstrap records a live check of immutable bases and a
+dedicated probe; writable image contents remain unverified until compared in a
+deliberate stopped/unmounted test. The checks do not reset the host or register
+the external schedule.
+
 For a fresh image deployment, follow [IMAGE-STORAGE.md](docs/IMAGE-STORAGE.md)
 alongside the native-package playbook. Preserve existing installation paths,
 identities and service policy when reusing a deployment; replacing an existing
@@ -370,15 +377,23 @@ Inside an operator shell, `/home/operator` corresponds to
 `/workspace/infrastructure-rootfs/home/operator` on the outer host. This tools
 filesystem supplies SSHD and Tailscale without booting another full systemd guest.
 
-From the outer host terminal, enter its login shell while SSHD is running:
+For an image deployment, enter its login shell from the outer host terminal:
 
 ```sh
-infractl host-exec sshd -- /usr/sbin/runuser --login operator
+operator
 ```
 
-This command needs outer root or working noninteractive sudo. It does not enable
-SSHD; see the access setup below before enabling that service. Type `exit` to
-return to the outer shell. `debianctl shell` enters the separate Debian demo.
+The command verifies/remounts preserved images, uses noninteractive sudo and
+enters a private mount namespace with the tools filesystem and host control
+paths available. SSHD and Tailscale can stay disabled. Type `exit` to return to
+the outer shell. `operator -c 'whoami'` runs a single command as operator.
+`debianctl shell` enters the separate Debian demo. For older directory deployments,
+the existing `infractl host-exec sshd -- /usr/sbin/runuser --login operator`
+entry still requires the SSHD service to be running.
+
+If you previously entered with plain `sudo chroot ... runuser`, exit that shell
+and reenter with `operator`: a plain chroot does not expose the host control
+paths, so `incus`/`infractl` may be unavailable even when their PATH is configured.
 
 The provisioned operator has passwordless sudo. Inside its shell:
 

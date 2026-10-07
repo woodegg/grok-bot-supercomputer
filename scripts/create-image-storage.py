@@ -46,7 +46,7 @@ def create_image(directory, name, mib, payload, target, account):
     return dict(name=name, file=image.name, size_mib=mib, uuid=uuid, payload=payload, target=target)
 
 def entrypoints(directory, account):
-    for command in ('infractl', 'incus', 'debianctl', 'tailscale', 'sv', 'layerctl', 'backupctl'):
+    for command in ('infractl', 'incus', 'debianctl', 'tailscale', 'sv', 'layerctl', 'backupctl', 'operator'):
         path = directory / command
         invocation = '/workspace/infra-images/' + command + '.py' if command in ('layerctl', 'backupctl') else '/workspace/infra-images/image-storage.py dispatch ' + command
         path.write_text('#!/bin/sh\nexec /usr/bin/python3 ' + invocation + ' "$@"\n')
@@ -87,7 +87,7 @@ def entrypoints(directory, account):
         shutil.copyfile(source, helper)
     helper.chmod(0o755)
     os.chown(helper, account.pw_uid, account.pw_gid)
-    for filename in ('create-image-storage.py', 'layerctl.py', 'backupctl.py'):
+    for filename in ('create-image-storage.py', 'layerctl.py', 'backupctl.py', 'survivability.py', 'operator-shell.py'):
         target = directory / filename
         source = Path(__file__).with_name(filename)
         if source.resolve() != target.resolve():

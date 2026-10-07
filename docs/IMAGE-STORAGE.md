@@ -200,6 +200,86 @@ or application/home-data compatibility across versions.
 
 ## Clean backup and recovery
 
+### Measure survival before and after recreation
+
+`survivability.py` records SHA256, ext4 UUID, image size, numeric ownership,
+permissions and allocated space. Every file record also includes modification
+time (mtime), metadata-change time (ctime), access time (atime), numeric inode,
+device, hard-link count and filesystem block size. Times have raw nanoseconds
+and readable UTC dates; size/allocation values are bytes. Creation time is
+explicitly unavailable through the stat API used here: ctime is not creation
+time. Records include the observation time and permissions in octal.
+Evidence stays private and box-owned under
+`/workspace/infra-images/survivability`, outside Git. The preparation action
+creates a NEW disposable 16 MiB ext4 probe with an internal root-owned 0700
+directory/0600 file, plus external box-owned/root-owned control files. It does
+not alter deployment image contents and refuses to replace an existing probe.
+
+```sh
+python3 /workspace/infra-images/survivability.py prepare
+python3 /workspace/infra-images/survivability.py capture bootstrap-live --mode live
+```
+
+After this setup, each infrastructure `start`, `startup` or `restart` records a
+live observation, including its trigger, in `survivability/observations.jsonl`.
+The log rotates at 1 MiB. Repeated startup compares to the original baseline;
+it never silently replaces it or formats a missing probe. An inspection problem
+is reported as `needs_attention` in lifecycle events without blocking startup.
+Automatic observations acquire the storage lock without waiting. If a backup
+holds it (including a checkpoint restoring services while still holding its
+lock), the observation records `deferred` and startup continues. The next
+bootstrap retries inspection; a deferred observation is not a successful hash
+check. Manual capture/verification still waits for exclusive access.
+Each observation stores its full current snapshot, including these file sizes
+and dates, plus before/after values for changed fields. Timestamp/inode/allocation
+changes are informational, separate from byte/permission mismatches. Reading
+hashes can itself affect atime; metadata is sampled before reading each file.
+Live observations are not an atomic snapshot of all mutable files. Older
+baselines lack newly added fields: their before values remain null rather than
+being invented. Save a new separately named baseline for complete metadata
+comparison; existing evidence is never silently rewritten.
+
+Live checks hash immutable bases only when their loop attachments are read-only,
+plus the unmounted probe. Mutable deployment image contents are explicitly
+**UNVERIFIED**: legitimate writes would change their whole-file hashes. This
+lightweight check runs when bootstrap is invoked; it does not register a Grok
+task or prove a five-minute schedule. Look for actual `scheduled` invocations
+and observation timestamps separately from the backup timer.
+
+For strict whole-deployment byte comparison, arrange a deliberate maintenance
+window and leave images detached across the test. Pause the external bootstrap
+task first: even a disabled supervisor's bootstrap can remount storage. Restore
+that task deliberately after verification. Keep the previously saved service
+policy; `infractl start` below intentionally enables the supervisor and is only
+appropriate if it was enabled before the test:
+
+```sh
+/workspace/infra-images/shutdown.sh
+python3 /workspace/infra-images/survivability.py capture before-reset --mode offline
+# Perform platform recreation separately. Do not start/remount services yet.
+python3 /workspace/infra-images/survivability.py verify before-reset --mode offline
+# Review the report before deliberately re-enabling the supervisor:
+infractl start
+```
+
+Offline capture/verification refuses any attached deployment image. It does not
+stop services automatically, replay journals, run filesystem repair or reset the
+host. Keep the baseline unchanged and also copy it to independent storage if
+available. Verification writes a new report, never overwrites active images or
+the baseline. Use the same mode before/after. Live manual verification uses
+`verify bootstrap-live --mode live`.
+
+Exit codes: 0 = compared content/metadata match; 1 = mismatch or inspection
+error; 2 = metadata/immutable checks match but mutable content is unverified.
+Loss of the external root-owned control is reported separately and does not
+fail preserved-image checks. Sparse allocation growth is informational if file
+size/content match. Changed kernel boot/PID1/root observations are evidence of
+environment changes, not proof of a particular reset mechanism. A matching
+checksum proves retained bytes, not application-level recovery or future
+platform guarantees. After intentional upgrades, save a new baseline with a
+new label rather than rewriting old evidence; changing the bootstrap baseline
+requires deliberate archival/replacement outside Git.
+
 ### Automatic versioned backups
 
 The image installer deploys `backupctl`; enable its saved policy explicitly:

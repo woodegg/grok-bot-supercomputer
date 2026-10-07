@@ -217,6 +217,14 @@ def main():
         backup=Path('/workspace/infra-images/backupctl.py')
         if args.action in ('start','startup','restart') and outcome!='skipped_disabled' and backup.exists():
             subprocess.run([sys.executable,str(backup),'start-worker'],check=True)
+        survival=Path('/workspace/infra-images/survivability.py')
+        if args.action in ('start','startup','restart') and survival.exists():
+            # Inspection must not change service policy or prevent recovery.
+            result=subprocess.run([sys.executable,str(survival),'observe','--trigger',args.trigger],
+                                  capture_output=True,text=True)
+            events.emit('survivability_checked',outcome=('deferred' if 'Survivability: deferred' in result.stdout
+                        else 'checked') if result.returncode==0 else 'needs_attention',
+                        returncode=result.returncode)
         events.finish(outcome)
     except Exception as error:
         events.finish('failed',error)

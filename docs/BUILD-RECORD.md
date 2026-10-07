@@ -209,3 +209,42 @@ tests. Earlier image/backup qualification remains applicable with its stated
 limits: full deployment platform recreation, live platform capture consistency,
 independent external backup and external Grok schedule verification remain
 unqualified.
+
+## Survivability inspection qualification
+
+The inspection helper creates only a new disposable 16 MiB probe, stores
+root-owned internal permission controls and external ownership controls, and
+saves private baseline/report files outside Git. Live inspections hash immutable
+bases and the detached probe; mutable image content is explicitly unverified.
+Offline inspections refuse attached images and support whole-image comparison
+without journal replay or filesystem repair. Sparse allocation changes do not
+count as content loss, and environment observations do not assert a reset cause.
+
+All 39 tests passed, including a real probe filesystem permission/hash check.
+A deployed manual bootstrap emitted a successful inspection observation without
+restarting services; the two immutable bases and probe matched the live baseline.
+No platform reset was performed for this qualification. At the time of checking,
+retained lifecycle logs contained no scheduled bootstrap invocations; inspection
+integration does not register or verify the external five-minute task.
+
+File metadata recording subsequently added raw/readable modification, change
+and access times, inode/device/link/block-size values and full current snapshots
+in observation logs. Before/after changes are recorded without treating timestamp
+changes as content failure. All 41 tests passed, including metadata/timestamp
+comparison checks. Older baseline fields remain unknown rather than retrofilled.
+
+A subsequent full checkpoint exposed a recursive storage-lock wait: service
+restoration invoked the automatic inspection while its parent backup held the
+same lock. Services had restarted, but checkpoint completion and later bootstrap
+calls waited. Inspection now uses a nonblocking lock and explicitly records
+deferred checks during maintenance. The single waiting inspection process was
+terminated to release the existing wait; queued real scheduled calls completed.
+All 43 tests passed, including automatic nonblocking/manual exclusive lock
+checks. A real inspection against the held backup lock returned deferred without
+waiting. This replaces earlier assumptions that the scheduling gap was external.
+
+The image-aware `operator` entrypoint was verified in a command session and an
+interactive login shell with SSHD disabled. Account/home, passwordless sudo,
+infrastructure status and Incus listing worked. Its private mount namespace
+exposes host control paths without changing access service policy. A plain
+chroot lacks those paths and is not the supported administration entrypoint.

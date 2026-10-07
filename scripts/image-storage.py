@@ -158,9 +158,12 @@ def main():
         ensure(manifest, directory)
         recover_backup(manifest, directory)
     if args.action == 'dispatch':
-        commands = {'infractl', 'incus', 'debianctl', 'tailscale', 'sv'}
+        commands = {'infractl', 'incus', 'debianctl', 'tailscale', 'sv', 'operator'}
         if not args.arguments or args.arguments[0] not in commands:
             raise RuntimeError('Select an installed infrastructure command')
+        if args.arguments[0] == 'operator':
+            os.execv(sys.executable, [sys.executable, str(directory / 'operator-shell.py'),
+                     *args.arguments[1:]])
         command = '/workspace/infrastructure-runtime/bin/' + args.arguments[0]
         if args.arguments[0] == 'incus' and len(args.arguments) > 1:
             invocation = args.arguments[1:]
