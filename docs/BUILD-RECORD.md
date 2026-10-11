@@ -243,8 +243,29 @@ All 43 tests passed, including automatic nonblocking/manual exclusive lock
 checks. A real inspection against the held backup lock returned deferred without
 waiting. This replaces earlier assumptions that the scheduling gap was external.
 
+The permanent startup wrapper now records arrival before sudo/storage work,
+child launch and final exit status in a box-owned private log outside images.
+All 48 tests passed, including arrival-before-control, failed launch, exit-code
+preservation, private modes, rotation and symlink refusal. This instrumentation
+does not prove scheduler registration or future regularity; existing source-only
+updates require deployment of the helper and startup entrypoint.
+
 The image-aware `operator` entrypoint was verified in a command session and an
 interactive login shell with SSHD disabled. Account/home, passwordless sudo,
 infrastructure status and Incus listing worked. Its private mount namespace
 exposes host control paths without changing access service policy. A plain
 chroot lacks those paths and is not the supported administration entrypoint.
+
+### Configuration-only backup policy
+
+Automatic image and storage-pool backup capture has been removed. The worker
+now saves configuration every 300 seconds and retains 12 completed generations;
+legacy quick/checkpoint commands both select configuration-only capture.
+Capture does not pause containers, freeze filesystems, unmount images or stop
+services. Legacy interruption recovery remains for upgrade safety.
+The unit suite ran 49 tests: 41 passed and eight were skipped. Focused backup
+tests cover archive integrity, safe extraction, policy migration and the
+configuration capture boundary. A deployed configuration archive was
+verified to contain no ext4 images. The three existing containers remained
+running. Existing image backup generations were removed by explicit request.
+This verification is not a reset, reboot or missing-container-data restoration test.

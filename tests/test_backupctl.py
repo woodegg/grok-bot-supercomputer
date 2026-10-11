@@ -1,15 +1,11 @@
-"""Backup publication, scheduling, corruption detection and real WAL recovery."""
+"""Configuration backup publication, scheduling, integrity and safe extraction."""
 import hashlib
-import contextlib
 import importlib.util
 import io
 import json
 import os
 from pathlib import Path
 import pwd
-import shutil
-import sqlite3
-import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -92,43 +88,27 @@ class CatalogTests(unittest.TestCase):
             backup.extract_generation(directory, self.root / 'candidate')
         self.assertFalse((self.root / 'escape').exists())
 
-@unittest.skipUnless(os.geteuid() == 0 and shutil.which('mkfs.ext4'), 'requires root and private mount namespace')
-class FrozenSQLiteTests(unittest.TestCase):
-    def test_frozen_image_wal_is_included_in_sqlite_backup(self):
-        with tempfile.TemporaryDirectory(prefix='backup-wal-check-') as temporary:
-            root = Path(temporary)
-            image = root / 'source.ext4'
-            with image.open('wb') as output:
-                output.truncate(32 * 1024 * 1024)
-            subprocess.run(['mkfs.ext4', '-q', '-F', str(image)], check=True)
-            mounted = root / 'mounted'
-            mounted.mkdir()
-            subprocess.run(['mount', '-o', 'loop', str(image), str(mounted)], check=True)
-            db = None
-            frozen = False
-            try:
-                (mounted / 'payload').mkdir()
-                db = sqlite3.connect(mounted / 'payload/app.sqlite')
-                db.execute('PRAGMA journal_mode=WAL')
-                db.execute('PRAGMA wal_autocheckpoint=0')
-                db.execute('CREATE TABLE proof(value TEXT)')
-                db.execute("INSERT INTO proof VALUES('committed in WAL')")
-                db.commit()
-                self.assertTrue((mounted / 'payload/app.sqlite-wal').exists())
-                subprocess.run(['/usr/sbin/fsfreeze', '-f', str(mounted)], check=True)
-                frozen = True
-                capture = root / 'capture'
-                capture.mkdir()
-                backup.copy_image(image, capture / 'home-test.ext4')
-                subprocess.run(['/usr/sbin/fsfreeze', '-u', str(mounted)], check=True)
-                frozen = False
-                backup.sqlite_from_image(capture, 'home-test.ext4', 'payload')
-                with contextlib.closing(sqlite3.connect(capture / 'sqlite/home-test/app.sqlite')) as restored:
-                    self.assertEqual(restored.execute('SELECT value FROM proof').fetchone()[0], 'committed in WAL')
-                    self.assertEqual(restored.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
-            finally:
-                if frozen:
-                    subprocess.run(['/usr/sbin/fsfreeze', '-u', str(mounted)], check=True)
-                if db:
-                    db.close()
-                subprocess.run(['umount', str(mounted)], check=True)
+class ConfigurationTests(unittest.TestCase):
+    def test_config_capture_never_stops_or_copies_storage(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            stage = Path(temporary)
+            def query(*args):
+                return '{}' if args[1] == '/1.0' else '[]'
+            with patch.object(backup, 'command') as command, patch.object(backup, 'incus', side_effect=query):
+                backup.capture_configs(stage, workspace=stage)
+            calls = [list(map(str, call.args)) for call in command.call_args_list]
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0][0], 'tar')
+            self.assertFalse(any('supervise' in arg or '/home/' in arg or '/var/lib/' in arg or arg.endswith('.ext4') for arg in calls[0]))
+            data = json.loads((stage / 'incus-configuration.json').read_text())
+            self.assertEqual(data['instances'], [])
+
+    def test_old_policy_migrates_to_configuration_only(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            policy = Path(temporary) / 'policy.json'
+            policy.write_text(json.dumps(dict(enabled=True, quick_interval_seconds=600, quick_keep=8, checkpoint_keep=3)))
+            with patch.object(backup, 'POLICY', policy):
+                result = backup.policy()
+            self.assertEqual(result['config_interval_seconds'], 600)
+            self.assertEqual(result['config_keep'], 8)
+            self.assertNotIn('checkpoint_keep', result)

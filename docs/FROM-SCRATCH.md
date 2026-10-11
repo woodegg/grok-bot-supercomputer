@@ -1,10 +1,11 @@
 # Build from scratch
 
-After completing and verifying an image installation, enable its optional
-versioned backup worker with `backupctl enable`. Defaults are five-minute quick
-captures and six-hour full checkpoints; the latter briefly stop services.
-Configure independent backup storage separately. See
-[capture and recovery details](IMAGE-STORAGE.md#automatic-versioned-backups).
+Image deployments support optional configuration-only backups with
+`backupctl enable`: every 300 seconds, keeping 12 completed versions.
+Use `backupctl config` for manual capture and `backupctl status` for policy and
+versions. Policy is saved privately in `/workspace/infra-images/backup-policy.json`.
+No images, pool contents or application data are copied; services continue running.
+See [configuration backup operations](IMAGE-STORAGE.md#automatic-versioned-backups).
 
 For selecting both, either or neither environment and changing launch settings,
 see [environment configuration](CONFIGURATION.md). Enable/disable policy is

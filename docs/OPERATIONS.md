@@ -1,12 +1,11 @@
 # Operations
 
-For image deployments, `backupctl status` reports saved policy and completed
-recovery points. Use `backupctl quick` for layered sandbox capture and
-`backupctl checkpoint` for a full stopped-image checkpoint. Checkpoints briefly
-interrupt enabled infrastructure and then restore its saved policy. Verify and
-extract into a new candidate before planning restoration; see
-[versioned backups](IMAGE-STORAGE.md#automatic-versioned-backups). Local archives
-still require independent storage protection.
+Image deployments support optional configuration-only backups with
+`backupctl enable`: every 300 seconds, keeping 12 completed versions.
+Use `backupctl config` for manual capture and `backupctl status` for policy and
+versions. Policy is saved privately in `/workspace/infra-images/backup-policy.json`.
+No images, pool contents or application data are copied; services continue running.
+See [configuration backup operations](IMAGE-STORAGE.md#automatic-versioned-backups).
 
 For a loop-image deployment, start with the box-owned
 `/workspace/infra-images/startup.sh` and use the image-aware ~/.local/bin commands.

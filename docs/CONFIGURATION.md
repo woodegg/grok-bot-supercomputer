@@ -1,11 +1,11 @@
 # Configure Debian and Incus environments
 
-Image deployments save automatic backup policy outside Git in
-`/workspace/infra-images/backup-policy.json`. `backupctl enable` defaults to quick
-capture every 300 seconds (12 retained generations) and full checkpoints every
-21600 seconds (three retained). `backupctl disable` preserves service policy.
-The maintenance journal and archives also stay outside the checkout; see
-[image backup operations](IMAGE-STORAGE.md#automatic-versioned-backups).
+Image deployments support optional configuration-only backups with
+`backupctl enable`: every 300 seconds, keeping 12 completed versions.
+Use `backupctl config` for manual capture and `backupctl status` for policy and
+versions. Policy is saved privately in `/workspace/infra-images/backup-policy.json`.
+No images, pool contents or application data are copied; services continue running.
+See [configuration backup operations](IMAGE-STORAGE.md#automatic-versioned-backups).
 
 Use `infractl` for the whole Debian environment and the whole Incus manager.
 It uses noninteractive sudo when needed. The two environments can be enabled

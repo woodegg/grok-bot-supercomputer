@@ -12,7 +12,8 @@ Incus manager, Debian demo and optional SSHD/Tailscale services without replacin
 platform PID1.
 
 [Storage](#storage-and-recovery) · [Installation](#installation) ·
-[Administration](#daily-administration) · [Incus](#create-and-manage-incus-containers) ·
+[Administration](#daily-administration) · [Operator](#use-the-operator-admin-account) ·
+[Incus](#create-and-manage-incus-containers) ·
 [Remote access](#optional-remote-access) · [Swap](#optional-compressed-swap) ·
 [Documentation](#documentation)
 
@@ -108,25 +109,22 @@ layered sandboxes; ordinary Incus instances retain native snapshot/clone support
 
 ### Versioned backup and recovery
 
-`backupctl enable` starts automatic quick backups every five minutes (keep 12)
-and full checkpoints every six hours (keep three). Quick capture briefly pauses
-running layered sandboxes and freezes their owned writable filesystems; full
-checkpoints stop infrastructure and copy all cleanly unmounted images. Services
-resume before compression, preserving saved disabled states. Full checkpoints
-also cover ordinary Incus pool data; quick backups focus on the managed layers.
+`backupctl enable` saves configuration every five minutes, keeping 12 completed
+versions. It never copies loop images, storage pools, container files or home
+data, and never pauses containers, freezes filesystems or stops services.
 
 ```sh
 backupctl status
-backupctl quick
-backupctl checkpoint
+backupctl config
 ```
 
-Backups live outside Git under `/workspace/infra-images/backups`. Verify and
-extract a completed generation into a new recovery candidate before restoring;
-never overwrite mounted images. See [backup and recovery](docs/IMAGE-STORAGE.md#automatic-versioned-backups)
-for interruption times, SQLite handling and independent storage configuration.
-Local versions cannot protect against loss or rollback of the whole workspace.
-Keep credentials, runtime data and backups out of Git; see [privacy](docs/PRIVACY.md).
+Private archives live outside Git under `/workspace/infra-images/backups`.
+They contain host `/etc` configuration, service launch files and disabled policy,
+the image manifest, layered deployment definitions and declarative Incus
+configuration. They may contain credentials and must remain private.
+`quick` and `checkpoint` are compatibility aliases for configuration-only capture.
+See [backup and recovery](docs/IMAGE-STORAGE.md#automatic-versioned-backups).
+These archives do not restore missing container data or a lost workspace.
 
 To measure preservation, use the [survivability check](docs/IMAGE-STORAGE.md#measure-survival-before-and-after-recreation).
 It records hashes, filesystem UUIDs and permissions before/after recreation.
@@ -230,6 +228,12 @@ and a successful bootstrap run are separate checks. Registration remains pending
 until the chat task has actually been created. The backup worker is a separate
 timer; its events do not prove that Grok scheduled bootstrap is running.
 
+The permanent startup entrypoint also records arrivals before sudo or storage
+checks in `/workspace/infra-images/startup-entry/events.jsonl`, outside mounted
+images. Compare `entry_received` and `entry_finished` with lifecycle events to
+distinguish missing task invocations from waits or failures before lifecycle
+logging. See [entry records](docs/IMAGE-STORAGE.md#record-bootstrap-arrival-before-privileged-work).
+
 Runit recovers exited services immediately. The five-minute chat task checks for
 a missing supervisor and starts it while honoring saved service policy.
 Bootstrap uses the installed workspace data; it does not reinstall software,
@@ -295,6 +299,86 @@ Read a daemon's log, for example, with:
 ```sh
 sudo tail -n 50 /workspace/infrastructure-runtime/state/logs/sshd/current
 ```
+
+## Use the operator admin account
+
+For an image deployment, run this from the outer `box` terminal:
+
+```sh
+operator
+```
+
+This opens a login shell as `operator` in the Debian tools filesystem. It
+verifies/remounts the preserved images and exposes the host management paths in
+a private mount namespace. **SSHD and Tailscale can remain disabled.** Entering
+this shell does not start the Incus manager or enable disabled services.
+
+If `operator` is not found in an existing terminal, use:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+operator
+# Or use the permanent entrypoint directly:
+# /workspace/infra-images/operator
+```
+
+### Check the account and administer infrastructure
+
+Inside the operator shell:
+
+```sh
+whoami                 # operator
+pwd                    # /home/operator
+sudo -n whoami         # root in the tools environment
+infractl status        # service status and saved enable/disable policy
+incus list             # instances managed by Incus
+```
+
+The provisioned account has passwordless sudo. It is a trusted administrator:
+its management wrappers can control the outer infrastructure and Incus manager.
+The `operator` command itself requires outer root or working noninteractive sudo.
+If the Incus manager is deliberately disabled, `incus list` cannot connect;
+review `infractl status` before deciding to run `infractl enable incus`.
+
+### Enter a container and return
+
+For the Alpine example instance, if it exists and is running:
+
+```sh
+incus exec alpine-a -- /bin/sh
+# You are now inside alpine-a. Run your container commands here.
+exit
+# Back in the operator shell:
+exit
+# Back in the outer box shell.
+```
+
+Use `incus exec NAME -- COMMAND`: write `exec` once. For example,
+`incus exec alpine-a exec -- /bin/sh` tries to run a command named `exec` inside
+the container and fails. Replace `alpine-a` with a name shown by `incus list`.
+
+For a single command from the outer terminal, without staying in the shell:
+
+```sh
+operator -c 'incus list'
+operator -c 'infractl status'
+```
+
+### Where files and commands belong
+
+`operator` belongs to the tools filesystem, separate from outer `box`, the
+Debian demo and accounts inside Incus instances. Its `/home/operator` is
+`/workspace/infrastructure-rootfs/home/operator` on the outer host, stored
+inside the tools system image. Installing packages with `sudo apt-get` here
+changes the tools environment; use `incus exec` to change an instance instead.
+`debianctl shell` enters the separate Debian demo.
+
+If you entered using plain `sudo chroot ... runuser`, exit and reenter with
+`operator`. A plain chroot does not expose host management paths, so `incus`
+and `infractl` may be unavailable even with PATH configured. The new command
+sets up those paths and does not require SSHD. Older directory deployments can
+still use `infractl host-exec sshd -- /usr/sbin/runuser --login operator` while
+SSHD is running.
 
 ## Create and manage Incus containers
 
@@ -367,47 +451,6 @@ The default pool uses `dir`: snapshots and clones copy files and consume time
 and storage accordingly. Default instances are unprivileged.
 
 ## Optional remote access
-
-### Use the operator admin account
-
-`operator` is the admin account in the Debian tools filesystem,
-`infrastructure-rootfs`. Its account records and home are separate from the
-outer host's account, the direct Debian demo and accounts inside Incus instances.
-Inside an operator shell, `/home/operator` corresponds to
-`/workspace/infrastructure-rootfs/home/operator` on the outer host. This tools
-filesystem supplies SSHD and Tailscale without booting another full systemd guest.
-
-For an image deployment, enter its login shell from the outer host terminal:
-
-```sh
-operator
-```
-
-The command verifies/remounts preserved images, uses noninteractive sudo and
-enters a private mount namespace with the tools filesystem and host control
-paths available. SSHD and Tailscale can stay disabled. Type `exit` to return to
-the outer shell. `operator -c 'whoami'` runs a single command as operator.
-`debianctl shell` enters the separate Debian demo. For older directory deployments,
-the existing `infractl host-exec sshd -- /usr/sbin/runuser --login operator`
-entry still requires the SSHD service to be running.
-
-If you previously entered with plain `sudo chroot ... runuser`, exit that shell
-and reenter with `operator`: a plain chroot does not expose the host control
-paths, so `incus`/`infractl` may be unavailable even when their PATH is configured.
-
-The provisioned operator has passwordless sudo. Inside its shell:
-
-```sh
-sudo -n whoami
-# Prints root in the tools environment.
-infractl status
-incus list
-```
-
-The installed wrappers let operator administer the outer infrastructure and
-Incus manager through sudo. Ordinary shell paths and native package commands
-belong to the tools filesystem; `incus exec NAME -- COMMAND` runs inside the
-named instance.
 
 ### SSH
 

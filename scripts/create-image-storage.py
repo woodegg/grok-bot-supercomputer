@@ -74,7 +74,7 @@ def entrypoints(directory, account):
                 output.write(block)
             os.chown(profile, account.pw_uid, account.pw_gid)
     for name, text in (
-        ('startup.sh', '#!/bin/sh\nexec /workspace/infra-images/infractl --trigger bootstrap "$@" startup\n'),
+        ('startup.sh', '#!/bin/sh\nexec /usr/bin/python3 /workspace/infra-images/startup-entry.py "$@"\n'),
         ('shutdown.sh', '#!/bin/sh\nexec /usr/bin/python3 /workspace/infra-images/image-storage.py shutdown\n'),
     ):
         path = directory / name
@@ -87,7 +87,7 @@ def entrypoints(directory, account):
         shutil.copyfile(source, helper)
     helper.chmod(0o755)
     os.chown(helper, account.pw_uid, account.pw_gid)
-    for filename in ('create-image-storage.py', 'layerctl.py', 'backupctl.py', 'survivability.py', 'operator-shell.py'):
+    for filename in ('create-image-storage.py', 'layerctl.py', 'backupctl.py', 'survivability.py', 'operator-shell.py', 'startup-entry.py'):
         target = directory / filename
         source = Path(__file__).with_name(filename)
         if source.resolve() != target.resolve():
