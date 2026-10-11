@@ -1,7 +1,6 @@
 #!/usr/bin/python3
-"""Versioned, completed-only recovery points for box-owned image deployments."""
+"""Versioned configuration-only backups; never copy images or stop services."""
 import argparse
-import contextlib
 import datetime
 import fcntl
 import hashlib
@@ -10,22 +9,19 @@ import json
 import os
 from pathlib import Path
 import pwd
-import re
 import shutil
 import signal
 import sqlite3
 import subprocess
 import sys
 import tarfile
-import tempfile
 import time
 import uuid
 
 ROOT = Path('/workspace/infra-images')
 POLICY = ROOT / 'backup-policy.json'
 JOURNAL = ROOT / 'backup-maintenance.json'
-DEFAULTS = dict(enabled=True, quick_interval_seconds=300, checkpoint_interval_seconds=21600,
-                quick_keep=12, checkpoint_keep=3, external_directory=None)
+DEFAULTS = dict(enabled=True, config_interval_seconds=300, config_keep=12, external_directory=None)
 RUNTIME = Path('/workspace/infrastructure-runtime')
 ENV = dict(os.environ, INFRA_STORAGE_VERIFIED='1')
 
@@ -85,10 +81,13 @@ def supervisor_running():
         return False
 
 def policy():
-    settings = dict(DEFAULTS, **json.loads(POLICY.read_text())) if POLICY.exists() else dict(DEFAULTS, enabled=False)
+    saved = json.loads(POLICY.read_text()) if POLICY.exists() else {'enabled': False}
+    settings = {key: saved.get(key, value) for key, value in DEFAULTS.items()}
+    settings['config_interval_seconds'] = saved.get('config_interval_seconds', saved.get('quick_interval_seconds', 300))
+    settings['config_keep'] = saved.get('config_keep', saved.get('quick_keep', 12))
     if type(settings['enabled']) is not bool:
         raise RuntimeError('Backup enabled policy must be boolean')
-    for key in ('quick_interval_seconds', 'checkpoint_interval_seconds', 'quick_keep', 'checkpoint_keep'):
+    for key in ('config_interval_seconds', 'config_keep'):
         if type(settings[key]) is not int or settings[key] < 1:
             raise RuntimeError('Backup intervals and retention must be positive integers')
     return settings
@@ -156,167 +155,38 @@ def recover_instances():
     sync_directory(ROOT)
     log('interrupted_backup_recovered')
 
-def dump_database(stage):
-    for kind in ('local', 'global'):
-        path = stage / ('incus-' + kind + '.sql')
-        with path.open('w') as output:
-            command(RUNTIME / 'bin/incus', 'admin', 'sql', kind, '.dump', stdout=output)
-        db = sqlite3.connect(':memory:')
-        try:
-            db.executescript(path.read_text())
-            if db.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
-                raise RuntimeError('Incus SQL dump failed integrity validation')
-        finally:
-            db.close()
-
-def copy_image(source, target):
-    command('/usr/bin/cp', '--reflink=auto', '--sparse=always', source, target)
-    with target.open('rb') as stream:
-        os.fsync(stream.fileno())
-
-def capture_configs(stage):
+def capture_configs(stage, workspace=Path('/workspace')):
     paths = []
     for base in ('debian-rootfs', 'infrastructure-rootfs', 'incus-rootfs'):
-        paths += [base + '/etc']
-    paths += ['infrastructure-rootfs/home/operator', 'infrastructure-rootfs/var/lib/tailscale']
+        paths.append(base + '/etc')
     for runtime in ('debian-runtime', 'infrastructure-runtime', 'incus-runtime'):
         paths += [runtime + '/etc', runtime + '/state/disabled']
-    paths += ['infrastructure-runtime/services', 'incus-runtime/state/layers.json']
-    paths = [path for path in paths if (Path('/workspace') / path).exists()]
+    paths += ['incus-runtime/state/layers.json']
+    services = workspace / 'infrastructure-runtime/services'
+    if services.exists():
+        for service in services.iterdir():
+            if service.is_dir():
+                for name in ('run', 'finish', 'down', 'log/run'):
+                    paths.append(str((service / name).relative_to(workspace)))
+    paths = [path for path in paths if (workspace / path).exists()]
     command('tar', '--numeric-owner', '--acls', '--xattrs', '--atime-preserve=system',
-            '-czf', stage / 'configuration.tar.gz', '-C', '/workspace', *paths)
-
-def quick_capture(stage, manifest, record):
-    layers_path = Path('/workspace/incus-runtime/state/layers.json')
-    layers = json.loads(layers_path.read_text()) if layers_path.exists() else dict(instances={})
-    states = {item['name']: item['status'] for item in json.loads(incus('list', '--format=json'))}
-    record['instance_states'] = states
-    images = [entry for entry in manifest['images'] if entry['name'].startswith(('base-', 'delta-', 'home-'))]
-    recipes = stage / 'rebuild'
-    recipes.mkdir()
-    for name, instance in layers['instances'].items():
-        if states.get(name) != 'Running':
-            continue
-        base = layers['bases'][instance['base']]
-        if base.get('init') == 'busybox':
-            packages = sorted(incus('exec', name, '--', '/sbin/apk', 'info').splitlines())
-            base_root = Path('/workspace/incus-rootfs') / base['path'].lstrip('/')
-            baseline = {line[2:] for line in (base_root / 'lib/apk/db/installed').read_text().splitlines() if line.startswith('P:')}
-            extras = [item for item in packages if item not in baseline]
-            if not all(re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9+_.:-]*', item) for item in extras):
-                raise RuntimeError('Unexpected package inventory format')
-            recipe = recipes / (name + '.sh')
-            recipe.write_text('#!/bin/sh\nset -eu\n# Review configuration from the saved delta before restoring it.\n' + ('apk add --no-cache ' + ' '.join(extras) + '\n' if extras else '# No additional packages.\n'))
-            recipe.chmod(0o700)
-            (recipes / (name + '-packages.json')).write_text(json.dumps(dict(base=instance['base'], packages=packages, extra_packages=extras), indent=2))
-    record.update(pause_intents=[], freeze_intents=[])
-    atomic_json(JOURNAL, record)
-    try:
-        for name in layers['instances']:
-            if states.get(name) == 'Running':
-                record['pause_intents'].append(name)
-                atomic_json(JOURNAL, record)
-                incus('pause', name)
-        for entry in images:
-            if not entry.get('readonly'):
-                record['freeze_intents'].append(entry['name'])
-                atomic_json(JOURNAL, record)
-                command('/usr/sbin/fsfreeze', '-f', entry['target'])
-        dump_database(stage)
-        for entry in images:
-            copy_image(ROOT / entry['file'], stage / entry['file'])
-        capture_configs(stage)
-        (stage / 'layers.json').write_text(json.dumps(layers, indent=2) + '\n')
-        return images
-    finally:
-        for name in list(reversed(record['freeze_intents'])):
-            entry = next(item for item in manifest['images'] if item['name'] == name)
-            result = subprocess.run(['/usr/sbin/fsfreeze', '-u', entry['target']], capture_output=True, text=True)
-            if result.returncode and 'Invalid argument' not in result.stderr:
-                raise RuntimeError('Cannot thaw ' + name + '; maintenance journal retained')
-            record['freeze_intents'].remove(name)
-            atomic_json(JOURNAL, record)
-        for name in list(record['pause_intents']):
-            current = json.loads(incus('query', '/1.0/instances/' + name + '/state'))['status']
-            if current == 'Frozen':
-                incus('start', name)
-            record['pause_intents'].remove(name)
-            atomic_json(JOURNAL, record)
-        JOURNAL.unlink()
-        sync_directory(ROOT)
-
-def checkpoint_capture(stage, manifest, record):
-    storage = storage_module()
-    record.update(supervisor_running=supervisor_running(),
-                  supervisor_disabled=(RUNTIME / 'state/disabled').exists())
-    atomic_json(JOURNAL, record)
-    try:
-        command(RUNTIME / 'bin/infractl', 'stop', stdout=subprocess.DEVNULL)
-        # Save original policy in the images, not the temporary backup stop.
-        restore_supervisor_policy(record)
-        storage.unmount_all(manifest, ROOT)
-        for entry in manifest['images']:
-            copy_image(ROOT / entry['file'], stage / entry['file'])
-        return manifest['images']
-    finally:
-        storage.ensure(manifest, ROOT)
-        restore_supervisor_policy(record)
-        if record['supervisor_running'] and not record['supervisor_disabled']:
-            command(RUNTIME / 'bin/infractl', 'startup', stdout=subprocess.DEVNULL)
-        JOURNAL.unlink()
-        sync_directory(ROOT)
-
-def sqlite_snapshots(stage, entries):
-    """Recover copied home databases and use SQLite's backup API, never live DB cp."""
-    count = 0
-    for entry in entries:
-        if not entry['name'].startswith('home-'):
-            continue
-        # Child namespace keeps temporary read-only clone mounts out of the host.
-        command('unshare', '--mount', '--propagation', 'private', sys.executable,
-                Path(__file__).resolve(), '_sqlite', stage, entry['file'], entry['payload'])
-        result = stage / ('sqlite-count-' + entry['name'] + '.json')
-        count += json.loads(result.read_text())['count']
-    return count
-
-def sqlite_from_image(stage, filename, payload):
-    count = 0
-    with tempfile.TemporaryDirectory(prefix='backup-sqlite-mount-') as temporary:
-        mounted = Path(temporary)
-        command('mount', '-o', 'loop,ro,noload', stage / filename, mounted)
-        try:
-            home = mounted / payload
-            output = stage / 'sqlite' / filename.removesuffix('.ext4')
-            for parent, dirs, files in os.walk(home, followlinks=False):
-                dirs[:] = [name for name in dirs if not (Path(parent) / name).is_symlink()]
-                for name in files:
-                    source = Path(parent) / name
-                    if source.is_symlink() or not source.is_file():
-                        continue
-                    with source.open('rb') as stream:
-                        if stream.read(16) != b'SQLite format 3\x00':
-                            continue
-                    relative = source.relative_to(home)
-                    destination = output / relative
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    with tempfile.TemporaryDirectory(prefix='backup-sqlite-recover-') as raw:
-                        raw_path = Path(raw) / 'database'
-                        shutil.copyfile(source, raw_path)
-                        for suffix in ('-wal', '-shm', '-journal'):
-                            sidecar = Path(str(source) + suffix)
-                            if sidecar.is_file() and not sidecar.is_symlink():
-                                shutil.copyfile(sidecar, Path(str(raw_path) + suffix))
-                        with contextlib.closing(sqlite3.connect(raw_path, timeout=5)) as db:
-                            if db.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
-                                raise RuntimeError('Copied home SQLite database failed integrity check')
-                            with contextlib.closing(sqlite3.connect(destination)) as backup:
-                                db.backup(backup)
-                                if backup.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
-                                    raise RuntimeError('SQLite backup failed validation')
-                    count += 1
-        finally:
-            command('umount', mounted)
-    (stage / ('sqlite-count-' + filename.removesuffix('.ext4') + '.json')).write_text(json.dumps(dict(count=count)))
+            '-czf', stage / 'configuration.tar.gz', '-C', workspace, *paths)
+    # Export declarative Incus configuration, never its database or volume contents.
+    if not (RUNTIME / 'services/incus/down').exists():
+        configuration = {}
+        for name, endpoint in (('server', '/1.0'), ('projects', '/1.0/projects?recursion=1'),
+                               ('profiles', '/1.0/profiles?recursion=1&all-projects=true'),
+                               ('networks', '/1.0/networks?recursion=1&all-projects=true'),
+                               ('storage_pools', '/1.0/storage-pools?recursion=1'),
+                               ('instances', '/1.0/instances?recursion=1&all-projects=true')):
+            data = json.loads(incus('query', endpoint))
+            if name == 'server':
+                data = {'config': data.get('config', {})}
+            elif name == 'instances':
+                keys = ('name', 'project', 'type', 'architecture', 'config', 'devices', 'profiles', 'description', 'ephemeral')
+                data = [{key: item[key] for key in keys if key in item} for item in data]
+            configuration[name] = data
+        (stage / 'incus-configuration.json').write_text(json.dumps(configuration, indent=2) + '\n')
 
 def completed(root, kind=None):
     if not root.exists():
@@ -414,42 +284,25 @@ def backup(kind):
     stage.mkdir(mode=0o700)
     capture = stage / 'capture'
     capture.mkdir()
-    manifest = json.loads((ROOT / 'manifest.json').read_text())
-    if shutil.disk_usage(root).free < sum(item['size_mib'] for item in manifest['images']) * 1024 * 1024 * 2:
-        raise RuntimeError('Insufficient space for capture plus compressed backup')
     started = time.monotonic()
     log('backup_started', kind=kind, generation=label)
     with open('/run/infra-image-storage.lock', 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        storage_module().ensure(manifest, ROOT)
-        recover_storage(manifest)
-        recover_instances()
         if JOURNAL.exists():
-            raise RuntimeError('Interrupted backup recovery is waiting for the enabled manager; no maintenance record overwritten')
-        record = dict(fingerprint(), kind=kind, generation=label, active_capture=True)
-        try:
-            entries = quick_capture(capture, manifest, record) if kind == 'quick' else checkpoint_capture(capture, manifest, record)
-        except BaseException:
-            if JOURNAL.exists():
-                pending = json.loads(JOURNAL.read_text())
-                pending['active_capture'] = False
-                atomic_json(JOURNAL, pending)
-            raise
-        for path in ROOT.iterdir():
-            if path.is_file() and (path.suffix in ('.py', '.sh') or path.name in ('manifest.json', 'backup-policy.json', 'README.txt', 'infractl', 'incus', 'sv', 'debianctl', 'tailscale', 'layerctl', 'backupctl')):
-                shutil.copy2(path, capture / path.name)
+            raise RuntimeError('Legacy backup maintenance must be recovered before configuration capture')
+        capture_configs(capture)
+        for name in ('manifest.json', 'backup-policy.json'):
+            shutil.copy2(ROOT / name, capture / name)
         capture_seconds = round(time.monotonic() - started, 3)
-    sqlite_count = sqlite_snapshots(capture, entries)
     payload = stage / 'payload.tar.gz'
     command('tar', '--sparse', '-I', 'gzip -1', '-cf', payload, '-C', capture, '.')
     with payload.open('rb') as stream:
         digest = hashlib.file_digest(stream, 'sha256').hexdigest()
         os.fsync(stream.fileno())
     shutil.rmtree(capture)
-    metadata = dict(version=1, kind=kind, created_epoch=time.time(), generation=label,
-                    hashes={'payload.tar.gz': digest}, images=[entry['name'] for entry in entries],
-                    capture_seconds=capture_seconds, sqlite_backups=sqlite_count,
-                    recovery_state=dict(record, active_capture=False), independent_copy=False)
+    metadata = dict(version=2, scope='configuration-only', kind=kind, created_epoch=time.time(), generation=label,
+                    hashes={'payload.tar.gz': digest}, images=[],
+                    capture_seconds=capture_seconds, sqlite_backups=0, independent_copy=False)
     final = root / label
     publish(stage, metadata, final, owner)
     settings = policy()
@@ -468,7 +321,7 @@ def backup(kind):
             raise RuntimeError('Unsafe retention path')
         shutil.rmtree(old)
     log('backup_completed', kind=kind, generation=label, capture_seconds=capture_seconds,
-        total_seconds=round(time.monotonic() - started, 3), sqlite_backups=sqlite_count,
+        total_seconds=round(time.monotonic() - started, 3), sqlite_backups=0,
         independent_copy=metadata['independent_copy'])
     print(label, 'complete; capture seconds:', capture_seconds, flush=True)
     if external_error:
@@ -490,22 +343,14 @@ def tick():
             recover_instances()
         root = ROOT / 'backups'
         if settings['external_directory']:
-            for kind in ('checkpoint', 'quick'):
-                points = completed(root, kind)
-                if points and not points[-1][1]['independent_copy']:
-                    path, data = points[-1]
-                    try:
-                        if mirror_generation(path, settings['external_directory']):
-                            data['independent_copy'] = True
-                            atomic_json(path / 'metadata.json', data)
-                    except Exception as error:
-                        log('external_copy_failed', generation=path.name, error=str(error))
-        if due(root, 'checkpoint', settings['checkpoint_interval_seconds']):
-            backup('checkpoint')
-        if not (RUNTIME / 'services/incus/down').exists() and due(root, 'quick', settings['quick_interval_seconds']):
-            # Startup returns before the manager API; retry on the next tick.
-            incus('list', '--format=json')
-            backup('quick')
+            points = completed(root, 'config')
+            if points and not points[-1][1]['independent_copy']:
+                path, data = points[-1]
+                if mirror_generation(path, settings['external_directory']):
+                    data['independent_copy'] = True
+                    atomic_json(path / 'metadata.json', data)
+        if due(root, 'config', settings['config_interval_seconds']):
+            backup('config')
 
 def start_worker():
     if not policy()['enabled'] or not supervisor_running() or (RUNTIME / 'state/disabled').exists():
@@ -570,21 +415,19 @@ def extract_generation(generation, destination):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('enable', 'disable', 'status', 'quick', 'checkpoint', 'tick', 'start-worker', 'worker', 'verify', 'extract', 'external', '_sqlite'))
+    parser.add_argument('action', choices=('enable', 'disable', 'status', 'config', 'quick', 'checkpoint', 'tick', 'start-worker', 'worker', 'verify', 'extract', 'external'))
     parser.add_argument('arguments', nargs='*')
     args = parser.parse_args()
-    required = {'verify': 1, 'extract': 2, 'external': 1, '_sqlite': 3}.get(args.action, 0)
+    required = {'verify': 1, 'extract': 2, 'external': 1}.get(args.action, 0)
     if len(args.arguments) != required:
         parser.error('Unexpected number of arguments for ' + args.action)
     if os.geteuid() != 0:
         os.execvp('sudo', ['sudo', '-n', sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
-    if args.action != '_sqlite' and not os.path.samefile('/', '/proc/1/root'):
+    if not os.path.samefile('/', '/proc/1/root'):
         os.execvp('nsenter', ['nsenter', '--target', '1', '--mount', '--root', '--wd', sys.executable,
                              str(Path(__file__).resolve()), *sys.argv[1:]])
     os.umask(0o077)
-    if args.action == '_sqlite':
-        sqlite_from_image(Path(args.arguments[0]), args.arguments[1], args.arguments[2])
-    elif args.action in ('enable', 'disable', 'external'):
+    if args.action in ('enable', 'disable', 'external'):
         settings = policy()
         if args.action == 'external':
             if len(args.arguments) != 1:
@@ -621,7 +464,7 @@ def main():
     else:
         with open('/run/infra-backup-operation.lock', 'a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
-            backup(args.action)
+            backup('config')  # Legacy quick/checkpoint names are config-only aliases.
 
 if __name__ == '__main__':
     try:

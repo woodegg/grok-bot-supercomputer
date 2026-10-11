@@ -200,6 +200,35 @@ or application/home-data compatibility across versions.
 
 ## Clean backup and recovery
 
+### Record bootstrap arrival before privileged work
+
+The permanent `startup.sh` uses `startup-entry.py` to write an entry record
+before launching the image-aware controls, sudo, storage-lock acquisition or
+image validation. Its private, box-owned log is outside mounted images:
+
+```sh
+tail -n 12 /workspace/infra-images/startup-entry/events.jsonl
+```
+
+Each invocation has a run ID and records `entry_received`, `control_spawned`
+(with child PID) and `entry_finished` (with exit code and total elapsed time).
+Timestamps are UTC; trigger, PID, parent PID and invoking UID are included.
+Raw command arguments, environment variables and credentials are not logged.
+The directory is 0700, files 0600, with three rotated logs at 1 MiB each.
+Concurrent entry writes are serialized. The wrapper forwards termination
+signals and preserves the control command's exit status. Logging failures are
+printed to stderr without preventing attempted infrastructure recovery.
+
+Compare arrival records with the private lifecycle events: no arrival record
+means the command did not reach this logger, or entry logging itself failed;
+arrival/spawn without lifecycle start means a pre-lifecycle wait/failure remains
+possible. Arrival without finish can also mean the wrapper was killed or the
+environment was suspended. It does not by itself prove a deadlock. This closes
+the previous observability gap but does not register or guarantee a schedule.
+Direct `infractl startup` bypasses this entry logger; scheduled tasks should use
+the permanent `startup.sh`. Deploy the helper with the entrypoint; it is not
+intended to be run from the source checkout, where runtime logs do not belong.
+
 ### Measure survival before and after recreation
 
 `survivability.py` records SHA256, ext4 UUID, image size, numeric ownership,
@@ -282,69 +311,54 @@ requires deliberate archival/replacement outside Git.
 
 ### Automatic versioned backups
 
-The image installer deploys `backupctl`; enable its saved policy explicitly:
+The image installer deploys `backupctl`. Automatic backups save configuration
+only, every 300 seconds with 12 retained completed generations:
 
 ```sh
 backupctl enable
 backupctl status
-backupctl quick
-backupctl checkpoint
+backupctl config
 ```
 
-Defaults are one quick backup every 300 seconds (keep 12), and one full
-checkpoint every six hours (keep three). Completed generations live under
-`/workspace/infra-images/backups`, owned by box with private permissions.
-An idempotent worker starts after successful infrastructure startup. Supervisor
-disable and individual service disables are preserved. `backupctl disable`
-stops future automatic work; an active capture finishes safely before worker exit.
+Archives are private and box-owned under `/workspace/infra-images/backups`.
+Capture includes the three environment `/etc` trees, runtime configuration,
+service launch scripts and disabled markers, image manifest and layer definitions.
+When Incus is enabled, it also exports server, project, profile, network, storage
+pool and instance definitions through the running API. Pool definitions contain
+settings, not pool contents. Container application configuration inside their
+filesystems is not captured. SSH keys present in `/etc` are private configuration;
+operator home files and Tailscale runtime identity/state are not captured.
 
-Quick capture pauses running registered layered instances, freezes only their
-owned delta/home filesystems, copies their images and read-only bases, and dumps
-the running Incus local/global SQL databases. It then thaws and resumes the
-instances before compression. Originally stopped or frozen instances stay so.
-The demonstrated capture took about 2–4 seconds. This covers the managed Alpine
-layers, not ordinary Incus pool data or arbitrary application databases.
-SQLite files in copied home images are recovered with copied WAL files and the
-SQLite backup API; standalone copies pass integrity checking. Additional Alpine
-packages are recorded with rebuild recipes. Other database engines require
-their own consistent backup procedure; a package recipe is not complete system
-configuration migration.
+There are no image copies, database dumps, application data backups, filesystem
+freezes, container pauses or service restarts. `quick` and `checkpoint` remain
+configuration-only aliases for existing callers. Old image backup generations
+are not created or rotated by the new worker. The current deployment's old
+image generations were removed on explicit operator request.
 
-Full checkpoints stop the infrastructure, cleanly unmount all managed images,
-copy the complete set, then restore the prior enabled/disabled policy and running
-supervisor before compression. The observed capture interruption was about
-13–14 seconds. Compression took longer while services were already available.
-Only a completed, checksummed generation is a recovery point. Interrupted
-maintenance records let bootstrap thaw owned filesystems and restore policy;
-the worker resumes instances it paused once the manager is ready.
-
-Verify and extract into a **new** recovery candidate, never over live images:
+Only completed, checksummed generations are published. Verify and extract to
+a new directory before reviewing configuration for selective restoration:
 
 ```sh
-backupctl verify checkpoint-GENERATION
-backupctl extract checkpoint-GENERATION /workspace/recovery-candidate
+backupctl verify config-GENERATION
+backupctl extract config-GENERATION /workspace/configuration-candidate
 ```
 
-Replace `checkpoint-GENERATION` with a name from `backupctl status`. Inspect the
-candidate, check its filesystems offline, and plan a stopped restoration using
-its manifest and identities. A quick generation also includes configuration,
-SQL dumps, package inventory and standalone SQLite backups; do not apply SQL
-dumps blindly to a live Incus database. Extraction does not activate a deployment.
+Extraction does not apply configuration or recreate volumes. Backups cannot
+restore rootfs, home files, databases or missing images. Files may change during
+capture; this is a live configuration export, not a transactional snapshot.
+Policy and logs remain outside Git in `backup-policy.json` and
+`backup-events.jsonl`. Legacy interrupted-maintenance recovery remains available
+solely to safely thaw/resume an interrupted old backup; new captures do not
+create such maintenance records.
 
-Policy, maintenance journal and backup logs remain outside Git at
-`/workspace/infra-images/backup-policy.json`, `backup-maintenance.json` and
-`backup-events.jsonl`. To update a running worker, disable backups, wait for
-worker exit, deploy reviewed helpers, then reenable only if previously enabled.
-
-An optional independently mounted destination can be configured with
-`backupctl external /path/to/independent-volume`. It must already exist outside
-`/workspace`, on a different persistent filesystem; temporary/overlay filesystems
-are rejected. Completed archives are copied and checked before publication.
-External generations are not automatically pruned. This deployment currently
-has **no external destination**. Local versions reduce recovery loss but cannot
-protect against loss or rollback of the whole workspace. The five-minute setting
-is a target while the worker runs, not a zero-loss guarantee or proof of platform
-recreation behavior. The external Grok bootstrap task is a separate schedule.
+`backupctl disable` stops future automatic work without changing service policy.
+To update the worker, disable, wait for exit, deploy reviewed helpers, then
+restore its prior enabled setting. An optional independently mounted destination
+can be configured with `backupctl external /path/to/independent-volume`.
+It must exist outside `/workspace` on a different persistent filesystem.
+This deployment has no external destination. Local configuration versions do not
+survive loss of the whole workspace. Five minutes is a worker target; the Grok
+bootstrap task is a separate external schedule.
 
 ```sh
 /workspace/infra-images/shutdown.sh
